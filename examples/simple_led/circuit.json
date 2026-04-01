@@ -1,0 +1,144 @@
+[
+  {
+    "type": "source_component",
+    "source_component_id": "src_r1",
+    "name": "R1",
+    "value": "330",
+    "footprint": "Resistor_SMD:R_0603_1608Metric",
+    "properties": {
+      "Description": "Current limiting resistor for LED",
+      "Calculation": "R = (5V - 2V) / 10mA = 300 ohms, using 330"
+    }
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "src_led1",
+    "name": "LED1",
+    "value": "Red",
+    "footprint": "LED_SMD:LED_0603_1608Metric",
+    "properties": {
+      "Forward_Voltage": "2V",
+      "Forward_Current": "10mA"
+    }
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "net_vcc",
+    "name": "VCC"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "net_gnd",
+    "name": "GND"
+  },
+  {
+    "type": "schematic_box",
+    "schematic_box_id": "box_led_circuit",
+    "x": 200,
+    "y": 200,
+    "width": 600,
+    "height": 400
+  },
+  {
+    "type": "schematic_text",
+    "schematic_text_id": "text_title",
+    "schematic_box_id": "box_led_circuit",
+    "text": "LED Indicator Circuit",
+    "position": {"x": 240, "y": 240},
+    "rotation": 0,
+    "anchor": "left"
+  },
+  {
+    "type": "schematic_text",
+    "schematic_text_id": "text_desc",
+    "schematic_box_id": "box_led_circuit",
+    "text": "5V input, 10mA LED current\nR = (Vcc - Vf) / If",
+    "position": {"x": 240, "y": 280},
+    "rotation": 0,
+    "anchor": "left"
+  },
+  {
+    "type": "schematic_component",
+    "schematic_component_id": "sch_r1",
+    "source_component_id": "src_r1",
+    "center": {"x": 400, "y": 400},
+    "rotation": 0
+  },
+  {
+    "type": "schematic_component",
+    "schematic_component_id": "sch_led1",
+    "source_component_id": "src_led1",
+    "center": {"x": 600, "y": 400},
+    "rotation": 0
+  },
+  {
+    "type": "schematic_port",
+    "schematic_port_id": "port_r1_1",
+    "source_port_id": "1",
+    "schematic_component_id": "sch_r1",
+    "center": {"x": 400, "y": 370},
+    "facing_direction": "up"
+  },
+  {
+    "type": "schematic_port",
+    "schematic_port_id": "port_r1_2",
+    "source_port_id": "2",
+    "schematic_component_id": "sch_r1",
+    "center": {"x": 400, "y": 430},
+    "facing_direction": "down"
+  },
+  {
+    "type": "schematic_port",
+    "schematic_port_id": "port_led1_a",
+    "source_port_id": "A",
+    "schematic_component_id": "sch_led1",
+    "center": {"x": 630, "y": 400},
+    "facing_direction": "right"
+  },
+  {
+    "type": "schematic_port",
+    "schematic_port_id": "port_led1_k",
+    "source_port_id": "K",
+    "schematic_component_id": "sch_led1",
+    "center": {"x": 570, "y": 400},
+    "facing_direction": "left"
+  },
+  {
+    "type": "schematic_trace",
+    "schematic_trace_id": "trace_vcc_to_r1",
+    "edges": [
+      {"from": {"x": 300, "y": 370}, "to": {"x": 400, "y": 370}, "to_schematic_port_id": "port_r1_1"}
+    ]
+  },
+  {
+    "type": "schematic_trace",
+    "schematic_trace_id": "trace_r1_to_led",
+    "edges": [
+      {"from": {"x": 400, "y": 430}, "to": {"x": 400, "y": 480}, "from_schematic_port_id": "port_r1_2"},
+      {"from": {"x": 400, "y": 480}, "to": {"x": 680, "y": 480}},
+      {"from": {"x": 680, "y": 480}, "to": {"x": 680, "y": 400}},
+      {"from": {"x": 680, "y": 400}, "to": {"x": 630, "y": 400}, "to_schematic_port_id": "port_led1_a"}
+    ]
+  },
+  {
+    "type": "schematic_trace",
+    "schematic_trace_id": "trace_led_to_gnd",
+    "edges": [
+      {"from": {"x": 570, "y": 400}, "to": {"x": 500, "y": 400}, "from_schematic_port_id": "port_led1_k"}
+    ]
+  },
+  {
+    "type": "schematic_net_label",
+    "source_net_id": "net_vcc",
+    "center": {"x": 300, "y": 370},
+    "anchor_side": "left",
+    "text": "VCC"
+  },
+  {
+    "type": "schematic_net_label",
+    "source_net_id": "net_gnd",
+    "center": {"x": 500, "y": 400},
+    "anchor_side": "left",
+    "text": "GND"
+  }
+]

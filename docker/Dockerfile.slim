@@ -1,0 +1,35 @@
+# CircuitWeaver Slim Docker Image
+# Validation and search only - no KiCad (smaller image)
+
+FROM python:3.11-slim-bookworm
+
+LABEL maintainer="CircuitWeaver Contributors"
+LABEL description="CircuitWeaver MCP server (slim - no KiCad)"
+
+# Create non-root user
+RUN useradd -m -s /bin/bash circuitweaver
+
+# Set working directory
+WORKDIR /app
+
+# Copy project files
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ src/
+
+# Install CircuitWeaver (no KiCad features)
+RUN pip install --no-cache-dir -e .
+
+# Switch to non-root user
+USER circuitweaver
+
+# Create workspace directory
+RUN mkdir -p /home/circuitweaver/workspace
+
+WORKDIR /home/circuitweaver/workspace
+
+# Default command: start MCP server with limited tools
+ENTRYPOINT ["circuitweaver"]
+CMD ["serve", "--tools", "validate_circuit_file,search_kicad_parts,get_symbol_pinout,read_file,write_file,edit_file"]
+
+# Expose port for HTTP mode
+EXPOSE 3000

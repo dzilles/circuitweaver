@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  # Full CircuitWeaver with KiCad support
+  circuitweaver:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./workspace:/home/circuitweaver/workspace
+      # Mount local KiCad libraries (optional)
+      # - ~/.local/share/kicad:/home/circuitweaver/.local/share/kicad:ro
+    environment:
+      - LOG_LEVEL=INFO
+    command: ["serve", "--transport", "http", "--host", "0.0.0.0", "--port", "3000"]
+
+  # Slim version (validation only, no KiCad)
+  circuitweaver-slim:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.slim
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./workspace:/home/circuitweaver/workspace
+    environment:
+      - LOG_LEVEL=INFO
+    command: ["serve", "--transport", "http", "--host", "0.0.0.0", "--port", "3000"]
+    profiles:
+      - slim
+
+  # Development container with hot reload
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ..:/app
+      - ./workspace:/home/circuitweaver/workspace
+    environment:
+      - LOG_LEVEL=DEBUG
+    command: ["python", "-m", "circuitweaver", "serve", "--transport", "http", "--host", "0.0.0.0"]
+    profiles:
+      - dev
+
+volumes:
+  workspace:
