@@ -104,13 +104,22 @@ async def get_symbol_pins(symbol_id: str) -> str:
     except ValueError as e:
         return f"Error: {e}"
 
-    lines = [f"Pins for {symbol_id}:\n"]
-    lines.append("Pin # | Name | Electrical Type")
-    lines.append("------|------|----------------")
+    if not pins:
+        return f"No pins found for {symbol_id}"
+
+    # Calculate column widths for a pretty Markdown table
+    col1_w = max(len("Pin #"), max((len(str(p.number)) for p in pins), default=0))
+    col2_w = max(len("Name"), max((len(p.name) for p in pins), default=0))
+    col3_w = max(len("Electrical Type"), max((len(p.electrical_type) for p in pins), default=0))
+
+    header = f"| {'Pin #'.ljust(col1_w)} | {'Name'.ljust(col2_w)} | {'Electrical Type'.ljust(col3_w)} |"
+    sep = f"| {'-' * col1_w} | {'-' * col2_w} | {'-' * col3_w} |"
+    
+    lines = [f"Pins for {symbol_id}:\n", header, sep]
 
     for pin in pins:
         lines.append(
-            f"{pin.number} | {pin.name} | {pin.electrical_type}"
+            f"| {str(pin.number).ljust(col1_w)} | {pin.name.ljust(col2_w)} | {pin.electrical_type.ljust(col3_w)} |"
         )
 
     return "\n".join(lines)
