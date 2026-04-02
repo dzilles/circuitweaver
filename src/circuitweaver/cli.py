@@ -187,14 +187,12 @@ def pins(symbol_id: str) -> None:
     table = Table(title=f"Pins for {symbol_id}")
     table.add_column("Pin #", style="cyan")
     table.add_column("Name")
-    table.add_column("Direction")
     table.add_column("Type")
 
     for pin in pin_list:
         table.add_row(
             str(pin.number),
             pin.name,
-            pin.direction,
             pin.electrical_type,
         )
 
