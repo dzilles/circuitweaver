@@ -35,6 +35,13 @@ class SourceComponent(BaseModel):
     source_component_id: str = Field(..., description="Unique identifier")
     name: str = Field(..., description="Reference designator (R1, C1, U1)")
 
+    # KiCad Symbol Mapping
+    symbol_id: Optional[str] = Field(
+        default=None,
+        description="KiCad symbol ID (e.g., 'Device:R'). "
+        "Required for validation and KiCad schematic generation.",
+    )
+
     # Component subtype (optional but recommended)
     ftype: Optional[str] = Field(
         default=None,

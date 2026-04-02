@@ -250,6 +250,7 @@ Before you can connect a pin in a `source_trace`, you **MUST** define a `source_
     "type": "source_component",
     "source_component_id": "comp_r1",
     "name": "R1",
+    "symbol_id": "Device:R",
     "ftype": "simple_resistor",
     "resistance": 330,
     "display_value": "330R"
@@ -258,6 +259,7 @@ Before you can connect a pin in a `source_trace`, you **MUST** define a `source_
     "type": "source_component",
     "source_component_id": "comp_led1",
     "name": "LED1",
+    "symbol_id": "Device:LED",
     "ftype": "simple_led",
     "color": "red"
   },
@@ -601,3 +603,4 @@ Before submitting your logic JSON, verify:
 - Unconnected pins: Add missing `source_trace` connections
 - Power flag issues: Ensure power nets have `is_power: true`
 - These are logic errors - fix in `logic_draft.json`, not `circuit.json`
+ logic errors - fix in `logic_draft.json`, not `circuit.json`
