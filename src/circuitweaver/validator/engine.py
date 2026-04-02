@@ -9,22 +9,17 @@ from pydantic import ValidationError as PydanticValidationError
 
 from circuitweaver.types.circuit_json import (
     CircuitElement,
-    SchematicBox,
-    SchematicComponent,
-    SchematicTrace,
     SourceComponent,
+    SourceGroup,
+    SourceNet,
+    SourcePort,
+    SourceTrace,
 )
 from circuitweaver.validator.result import ValidationResult
 from circuitweaver.validator.rules import (
-    BoundsCheckRule,
-    HierarchyLinksRule,
-    IntegerCoordsRule,
-    OrthogonalTracesRule,
-    PinPositionsRule,
-    SourceFirstRule,
-    UnconnectedPinsRule,
+    SourceReferencesRule,
+    TraceConnectionsRule,
     UniqueIdsRule,
-    UnplacedComponentsRule,
     ValidationRule,
 )
 
@@ -33,15 +28,9 @@ logger = logging.getLogger(__name__)
 
 # All validation rules in order of execution
 VALIDATION_RULES: list[type[ValidationRule]] = [
-    IntegerCoordsRule,
-    OrthogonalTracesRule,
     UniqueIdsRule,
-    SourceFirstRule,
-    BoundsCheckRule,
-    HierarchyLinksRule,
-    PinPositionsRule,
-    UnconnectedPinsRule,
-    UnplacedComponentsRule,
+    SourceReferencesRule,
+    TraceConnectionsRule,
 ]
 
 
@@ -98,9 +87,7 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
                 result.add_error(
                     "schema",
                     f"Element {i}: {loc} - {error['msg']}",
-                    element_id=raw_element.get("source_component_id")
-                    or raw_element.get("schematic_component_id")
-                    or raw_element.get("schematic_trace_id"),
+                    element_id=_get_element_id_from_raw(raw_element),
                 )
         except ValueError as e:
             result.add_error("schema", f"Element {i}: {e}")
@@ -125,39 +112,12 @@ def _parse_element(raw: dict[str, Any]) -> CircuitElement:
     """Parse a raw dict into a CircuitElement."""
     element_type = raw.get("type")
 
-    # Import all element types
-    from circuitweaver.types.circuit_json import (
-        SchematicBox,
-        SchematicComponent,
-        SchematicError,
-        SchematicLine,
-        SchematicNetLabel,
-        SchematicNoConnect,
-        SchematicPort,
-        SchematicSheet,
-        SchematicText,
-        SchematicTrace,
-        SourceComponent,
-        SourceNet,
-        SourcePort,
-        SourceTrace,
-    )
-
     type_map = {
         "source_component": SourceComponent,
         "source_port": SourcePort,
         "source_net": SourceNet,
         "source_trace": SourceTrace,
-        "schematic_sheet": SchematicSheet,
-        "schematic_component": SchematicComponent,
-        "schematic_port": SchematicPort,
-        "schematic_trace": SchematicTrace,
-        "schematic_box": SchematicBox,
-        "schematic_net_label": SchematicNetLabel,
-        "schematic_text": SchematicText,
-        "schematic_line": SchematicLine,
-        "schematic_error": SchematicError,
-        "schematic_no_connect": SchematicNoConnect,
+        "source_group": SourceGroup,
     }
 
     if element_type not in type_map:
@@ -170,33 +130,53 @@ def _parse_element(raw: dict[str, Any]) -> CircuitElement:
     return type_map[element_type].model_validate(raw)
 
 
+def _get_element_id_from_raw(raw: dict[str, Any]) -> str | None:
+    """Extract element ID from raw dict."""
+    for key in [
+        "source_component_id",
+        "source_port_id",
+        "source_net_id",
+        "source_trace_id",
+        "source_group_id",
+    ]:
+        if key in raw:
+            return raw[key]
+    return None
+
+
 def _build_validation_context(elements: list[CircuitElement]) -> dict[str, Any]:
     """Build a context dictionary for validation rules."""
     source_components: dict[str, SourceComponent] = {}
-    schematic_components: dict[str, SchematicComponent] = {}
-    schematic_boxes: dict[str, SchematicBox] = {}
-    traces: list[SchematicTrace] = []
-    all_ids: set[str] = set()
+    source_ports: dict[str, SourcePort] = {}
+    source_nets: dict[str, SourceNet] = {}
+    source_traces: dict[str, SourceTrace] = {}
+    source_groups: dict[str, SourceGroup] = {}
+
+    # Also index by subcircuit_id
+    subcircuit_ids: set[str] = set()
 
     for element in elements:
         if isinstance(element, SourceComponent):
             source_components[element.source_component_id] = element
-            all_ids.add(element.source_component_id)
-        elif isinstance(element, SchematicComponent):
-            schematic_components[element.schematic_component_id] = element
-            all_ids.add(element.schematic_component_id)
-        elif isinstance(element, SchematicBox):
-            schematic_boxes[element.schematic_box_id] = element
-            all_ids.add(element.schematic_box_id)
-        elif isinstance(element, SchematicTrace):
-            traces.append(element)
-            all_ids.add(element.schematic_trace_id)
+            if element.subcircuit_id:
+                subcircuit_ids.add(element.subcircuit_id)
+        elif isinstance(element, SourcePort):
+            source_ports[element.source_port_id] = element
+        elif isinstance(element, SourceNet):
+            source_nets[element.source_net_id] = element
+        elif isinstance(element, SourceTrace):
+            source_traces[element.source_trace_id] = element
+        elif isinstance(element, SourceGroup):
+            source_groups[element.source_group_id] = element
+            if element.subcircuit_id:
+                subcircuit_ids.add(element.subcircuit_id)
 
     return {
         "source_components": source_components,
-        "schematic_components": schematic_components,
-        "schematic_boxes": schematic_boxes,
-        "traces": traces,
-        "all_ids": all_ids,
+        "source_ports": source_ports,
+        "source_nets": source_nets,
+        "source_traces": source_traces,
+        "source_groups": source_groups,
+        "subcircuit_ids": subcircuit_ids,
         "elements": elements,
     }

@@ -26,82 +26,91 @@ def invalid_fixtures_dir(fixtures_dir: Path) -> Path:
 
 @pytest.fixture
 def simple_led_circuit() -> list[dict]:
-    """A simple valid LED circuit."""
+    """A simple valid LED circuit (logic-only)."""
     return [
         {
             "type": "source_component",
             "source_component_id": "src_r1",
             "name": "R1",
-            "value": "330",
+            "ftype": "simple_resistor",
+            "resistance": 330,
             "footprint": "Resistor_SMD:R_0603_1608Metric",
         },
         {
             "type": "source_component",
             "source_component_id": "src_led1",
             "name": "LED1",
-            "value": "Red",
+            "ftype": "simple_led",
+            "color": "red",
             "footprint": "LED_SMD:LED_0603_1608Metric",
         },
         {
-            "type": "schematic_component",
-            "schematic_component_id": "sch_r1",
+            "type": "source_port",
+            "source_port_id": "port_r1_1",
             "source_component_id": "src_r1",
-            "center": {"x": 20, "y": 20},
-            "rotation": 0,
+            "name": "1",
         },
         {
-            "type": "schematic_component",
-            "schematic_component_id": "sch_led1",
+            "type": "source_port",
+            "source_port_id": "port_r1_2",
+            "source_component_id": "src_r1",
+            "name": "2",
+        },
+        {
+            "type": "source_port",
+            "source_port_id": "port_led1_a",
             "source_component_id": "src_led1",
-            "center": {"x": 30, "y": 20},
-            "rotation": 0,
+            "name": "A",
         },
         {
-            "type": "schematic_trace",
-            "schematic_trace_id": "trace_1",
-            "edges": [{"from": {"x": 22, "y": 20}, "to": {"x": 28, "y": 20}}],
+            "type": "source_port",
+            "source_port_id": "port_led1_k",
+            "source_component_id": "src_led1",
+            "name": "K",
+        },
+        {
+            "type": "source_trace",
+            "source_trace_id": "trace_1",
+            "connected_source_port_ids": ["port_r1_2", "port_led1_a"],
         },
     ]
 
 
 @pytest.fixture
 def diagonal_trace_circuit() -> list[dict]:
-    """A circuit with an invalid diagonal trace."""
+    """A circuit with an invalid connection (stub)."""
     return [
         {
             "type": "source_component",
             "source_component_id": "src_r1",
             "name": "R1",
-            "value": "10k",
+            "ftype": "simple_resistor",
+            "resistance": 10000,
         },
         {
-            "type": "schematic_component",
-            "schematic_component_id": "sch_r1",
+            "type": "source_port",
+            "source_port_id": "port_r1_1",
             "source_component_id": "src_r1",
-            "center": {"x": 10, "y": 10},
-            "rotation": 0,
+            "name": "1",
         },
         {
-            "type": "schematic_trace",
-            "schematic_trace_id": "trace_bad",
-            "edges": [
-                # This is diagonal - both x and y change!
-                {"from": {"x": 10, "y": 10}, "to": {"x": 20, "y": 20}}
-            ],
+            "type": "source_trace",
+            "source_trace_id": "trace_stub",
+            "connected_source_port_ids": ["port_r1_1"],
+            "connected_source_net_ids": [],
         },
     ]
 
 
 @pytest.fixture
 def missing_source_circuit() -> list[dict]:
-    """A circuit with schematic_component referencing non-existent source."""
+    """A circuit with source_port referencing non-existent component."""
     return [
         {
-            "type": "schematic_component",
-            "schematic_component_id": "sch_r1",
+            "type": "source_port",
+            "source_port_id": "port_r1_1",
             "source_component_id": "src_r1",  # This doesn't exist!
-            "center": {"x": 10, "y": 10},
-            "rotation": 0,
+            "name": "1",
         },
     ]
 

@@ -2,55 +2,38 @@
 
 from circuitweaver.types.circuit_json import (
     CircuitElement,
-    Point,
-    SchematicBox,
-    SchematicComponent,
-    SchematicError,
-    SchematicLine,
-    SchematicNetLabel,
-    SchematicPort,
-    SchematicSheet,
-    SchematicText,
-    SchematicTrace,
-    Size,
     SourceComponent,
+    SourceGroup,
     SourceNet,
     SourcePort,
     SourceTrace,
-    TraceEdge,
+    get_element_id,
+    get_element_type,
 )
 from circuitweaver.types.errors import (
     CircuitWeaverError,
     CompilationError,
     ERCError,
+    KiCadNotFoundError,
     ValidationError,
 )
 
 __all__ = [
-    # Primitives
-    "Point",
-    "Size",
-    "TraceEdge",
     # Source types
     "SourceComponent",
     "SourcePort",
     "SourceNet",
     "SourceTrace",
-    # Schematic types
-    "SchematicSheet",
-    "SchematicComponent",
-    "SchematicPort",
-    "SchematicTrace",
-    "SchematicBox",
-    "SchematicNetLabel",
-    "SchematicText",
-    "SchematicLine",
-    "SchematicError",
+    "SourceGroup",
     # Union
     "CircuitElement",
+    # Helpers
+    "get_element_id",
+    "get_element_type",
     # Errors
     "CircuitWeaverError",
     "ValidationError",
     "CompilationError",
     "ERCError",
+    "KiCadNotFoundError",
 ]

@@ -4,15 +4,8 @@ from typing import Any
 
 from circuitweaver.types.circuit_json import (
     CircuitElement,
-    SchematicBox,
-    SchematicComponent,
-    SchematicLine,
-    SchematicNetLabel,
-    SchematicPort,
-    SchematicSheet,
-    SchematicText,
-    SchematicTrace,
     SourceComponent,
+    SourceGroup,
     SourceNet,
     SourcePort,
     SourceTrace,
@@ -49,13 +42,7 @@ class UniqueIdsRule(ValidationRule):
             "source_port": {},
             "source_net": {},
             "source_trace": {},
-            "schematic_sheet": {},
-            "schematic_component": {},
-            "schematic_port": {},
-            "schematic_trace": {},
-            "schematic_box": {},
-            "schematic_text": {},
-            "schematic_line": {},
+            "source_group": {},
         }
 
         for i, element in enumerate(elements):
@@ -63,9 +50,6 @@ class UniqueIdsRule(ValidationRule):
 
             if element_id is None:
                 continue
-
-            if namespace not in seen:
-                seen[namespace] = {}
 
             if element_id in seen[namespace]:
                 first_index = seen[namespace][element_id]
@@ -93,22 +77,7 @@ class UniqueIdsRule(ValidationRule):
             return element.source_net_id, "source_net"
         elif isinstance(element, SourceTrace):
             return element.source_trace_id, "source_trace"
-        elif isinstance(element, SchematicSheet):
-            return element.schematic_sheet_id, "schematic_sheet"
-        elif isinstance(element, SchematicComponent):
-            return element.schematic_component_id, "schematic_component"
-        elif isinstance(element, SchematicPort):
-            return element.schematic_port_id, "schematic_port"
-        elif isinstance(element, SchematicTrace):
-            return element.schematic_trace_id, "schematic_trace"
-        elif isinstance(element, SchematicBox):
-            return element.schematic_box_id, "schematic_box"
-        elif isinstance(element, SchematicText):
-            return element.schematic_text_id, "schematic_text"
-        elif isinstance(element, SchematicLine):
-            return element.schematic_line_id, "schematic_line"
-        elif isinstance(element, SchematicNetLabel):
-            # Net labels use source_net_id which can be repeated
-            return None, "schematic_net_label"
+        elif isinstance(element, SourceGroup):
+            return element.source_group_id, "source_group"
         else:
             return None, "unknown"

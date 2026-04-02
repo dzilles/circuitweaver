@@ -1,61 +1,75 @@
 [
   {
     "type": "source_component",
-    "source_component_id": "src_r1",
+    "source_component_id": "comp_r1",
     "name": "R1",
-    "value": "330",
-    "footprint": "Resistor_SMD:R_0603_1608Metric"
+    "ftype": "simple_resistor",
+    "resistance": 330,
+    "display_value": "330R"
   },
   {
     "type": "source_component",
-    "source_component_id": "src_led1",
+    "source_component_id": "comp_led1",
     "name": "LED1",
-    "value": "Red",
-    "footprint": "LED_SMD:LED_0603_1608Metric"
+    "ftype": "simple_led",
+    "color": "red"
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "port_r1_1",
+    "source_component_id": "comp_r1",
+    "name": "1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "port_r1_2",
+    "source_component_id": "comp_r1",
+    "name": "2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "port_led1_a",
+    "source_component_id": "comp_led1",
+    "name": "A",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "port_led1_k",
+    "source_component_id": "comp_led1",
+    "name": "K",
+    "pin_number": 2
   },
   {
     "type": "source_net",
     "source_net_id": "net_vcc",
-    "name": "VCC"
+    "name": "VCC",
+    "is_power": true
   },
   {
     "type": "source_net",
     "source_net_id": "net_gnd",
-    "name": "GND"
+    "name": "GND",
+    "is_ground": true
   },
   {
-    "type": "schematic_component",
-    "schematic_component_id": "sch_r1",
-    "source_component_id": "src_r1",
-    "center": {"x": 20, "y": 20},
-    "rotation": 0
+    "type": "source_trace",
+    "source_trace_id": "trace_vcc_r1",
+    "connected_source_port_ids": ["port_r1_1"],
+    "connected_source_net_ids": ["net_vcc"]
   },
   {
-    "type": "schematic_component",
-    "schematic_component_id": "sch_led1",
-    "source_component_id": "src_led1",
-    "center": {"x": 30, "y": 20},
-    "rotation": 0
+    "type": "source_trace",
+    "source_trace_id": "trace_r1_led",
+    "connected_source_port_ids": ["port_r1_2", "port_led1_a"],
+    "connected_source_net_ids": []
   },
   {
-    "type": "schematic_trace",
-    "schematic_trace_id": "trace_r_to_led",
-    "edges": [
-      {"from": {"x": 22, "y": 20}, "to": {"x": 28, "y": 20}}
-    ]
-  },
-  {
-    "type": "schematic_net_label",
-    "source_net_id": "net_vcc",
-    "center": {"x": 18, "y": 20},
-    "anchor_side": "left",
-    "text": "VCC"
-  },
-  {
-    "type": "schematic_net_label",
-    "source_net_id": "net_gnd",
-    "center": {"x": 32, "y": 20},
-    "anchor_side": "right",
-    "text": "GND"
+    "type": "source_trace",
+    "source_trace_id": "trace_led_gnd",
+    "connected_source_port_ids": ["port_led1_k"],
+    "connected_source_net_ids": ["net_gnd"]
   }
 ]

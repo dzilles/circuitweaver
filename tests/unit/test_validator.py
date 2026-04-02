@@ -51,27 +51,15 @@ class TestValidateCircuitFile:
         assert not result.is_valid
         assert any("missing 'type'" in str(e) for e in result.errors)
 
-    def test_diagonal_trace(self, tmp_path: Path, diagonal_trace_circuit: list[dict]):
-        """Test that diagonal traces are caught."""
-        file_path = tmp_path / "diagonal.json"
-        file_path.write_text(json.dumps(diagonal_trace_circuit))
+    def test_unknown_type(self, tmp_path: Path):
+        """Test that unknown element types are caught."""
+        file_path = tmp_path / "unknown.json"
+        file_path.write_text('[{"type": "schematic_component", "schematic_component_id": "x"}]')
 
         result = validate_circuit_file(file_path)
 
         assert not result.is_valid
-        assert any("diagonal" in str(e).lower() for e in result.errors)
-
-    def test_missing_source_component(
-        self, tmp_path: Path, missing_source_circuit: list[dict]
-    ):
-        """Test that missing source_component reference is caught."""
-        file_path = tmp_path / "missing_source.json"
-        file_path.write_text(json.dumps(missing_source_circuit))
-
-        result = validate_circuit_file(file_path)
-
-        assert not result.is_valid
-        assert any("non-existent" in str(e) for e in result.errors)
+        assert any("Unknown element type" in str(e) for e in result.errors)
 
     def test_file_not_found(self, tmp_path: Path):
         """Test that missing file is handled."""
@@ -83,112 +71,184 @@ class TestValidateCircuitFile:
         assert any("not found" in str(e).lower() for e in result.errors)
 
 
-class TestOrthogonalTraces:
-    """Tests for orthogonal trace validation."""
+class TestUniqueIds:
+    """Tests for unique ID validation."""
 
-    def test_horizontal_trace_valid(self, tmp_path: Path):
-        """Test that horizontal traces are valid."""
+    def test_duplicate_component_id(self, tmp_path: Path):
+        """Test that duplicate component IDs are caught."""
         circuit = [
-            {
-                "type": "schematic_trace",
-                "schematic_trace_id": "trace_h",
-                "edges": [{"from": {"x": 10, "y": 20}, "to": {"x": 30, "y": 20}}],
-            }
+            {"type": "source_component", "source_component_id": "comp_1", "name": "R1"},
+            {"type": "source_component", "source_component_id": "comp_1", "name": "R2"},
         ]
-        file_path = tmp_path / "horizontal.json"
-        file_path.write_text(json.dumps(circuit))
-
-        result = validate_circuit_file(file_path)
-
-        # Should not have orthogonal errors
-        orthogonal_errors = [e for e in result.errors if "orthogonal" in str(e).lower()]
-        assert len(orthogonal_errors) == 0
-
-    def test_vertical_trace_valid(self, tmp_path: Path):
-        """Test that vertical traces are valid."""
-        circuit = [
-            {
-                "type": "schematic_trace",
-                "schematic_trace_id": "trace_v",
-                "edges": [{"from": {"x": 10, "y": 20}, "to": {"x": 10, "y": 40}}],
-            }
-        ]
-        file_path = tmp_path / "vertical.json"
-        file_path.write_text(json.dumps(circuit))
-
-        result = validate_circuit_file(file_path)
-
-        orthogonal_errors = [e for e in result.errors if "orthogonal" in str(e).lower()]
-        assert len(orthogonal_errors) == 0
-
-    def test_l_shaped_trace_valid(self, tmp_path: Path):
-        """Test that L-shaped traces (two orthogonal segments) are valid."""
-        circuit = [
-            {
-                "type": "schematic_trace",
-                "schematic_trace_id": "trace_l",
-                "edges": [
-                    {"from": {"x": 10, "y": 10}, "to": {"x": 20, "y": 10}},
-                    {"from": {"x": 20, "y": 10}, "to": {"x": 20, "y": 30}},
-                ],
-            }
-        ]
-        file_path = tmp_path / "l_shaped.json"
-        file_path.write_text(json.dumps(circuit))
-
-        result = validate_circuit_file(file_path)
-
-        orthogonal_errors = [e for e in result.errors if "orthogonal" in str(e).lower()]
-        assert len(orthogonal_errors) == 0
-
-
-class TestSourceFirstRule:
-    """Tests for source-first ordering rule."""
-
-    def test_source_before_schematic_valid(self, tmp_path: Path):
-        """Test that source before schematic is valid."""
-        circuit = [
-            {
-                "type": "source_component",
-                "source_component_id": "src_r1",
-                "name": "R1",
-            },
-            {
-                "type": "schematic_component",
-                "schematic_component_id": "sch_r1",
-                "source_component_id": "src_r1",
-                "center": {"x": 10, "y": 10},
-                "rotation": 0,
-            },
-        ]
-        file_path = tmp_path / "source_first.json"
-        file_path.write_text(json.dumps(circuit))
-
-        result = validate_circuit_file(file_path)
-
-        source_errors = [e for e in result.errors if "source_first" in str(e)]
-        assert len(source_errors) == 0
-
-    def test_schematic_before_source_invalid(self, tmp_path: Path):
-        """Test that schematic before source is invalid."""
-        circuit = [
-            {
-                "type": "schematic_component",
-                "schematic_component_id": "sch_r1",
-                "source_component_id": "src_r1",
-                "center": {"x": 10, "y": 10},
-                "rotation": 0,
-            },
-            {
-                "type": "source_component",
-                "source_component_id": "src_r1",
-                "name": "R1",
-            },
-        ]
-        file_path = tmp_path / "schematic_first.json"
+        file_path = tmp_path / "dup.json"
         file_path.write_text(json.dumps(circuit))
 
         result = validate_circuit_file(file_path)
 
         assert not result.is_valid
-        assert any("AFTER" in str(e) for e in result.errors)
+        assert any("Duplicate" in str(e) for e in result.errors)
+
+    def test_duplicate_port_id(self, tmp_path: Path):
+        """Test that duplicate port IDs are caught."""
+        circuit = [
+            {"type": "source_component", "source_component_id": "comp_1", "name": "R1"},
+            {"type": "source_port", "source_port_id": "port_1", "source_component_id": "comp_1", "name": "1"},
+            {"type": "source_port", "source_port_id": "port_1", "source_component_id": "comp_1", "name": "2"},
+        ]
+        file_path = tmp_path / "dup_port.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        assert not result.is_valid
+        assert any("Duplicate" in str(e) for e in result.errors)
+
+
+class TestSourceReferences:
+    """Tests for source reference validation."""
+
+    def test_invalid_port_component_ref(self, tmp_path: Path):
+        """Test that port referencing non-existent component is caught."""
+        circuit = [
+            {"type": "source_port", "source_port_id": "port_1", "source_component_id": "nonexistent", "name": "1"},
+        ]
+        file_path = tmp_path / "bad_ref.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        assert not result.is_valid
+        assert any("non-existent" in str(e) for e in result.errors)
+
+    def test_invalid_trace_port_ref(self, tmp_path: Path):
+        """Test that trace referencing non-existent port is caught."""
+        circuit = [
+            {"type": "source_component", "source_component_id": "comp_1", "name": "R1"},
+            {
+                "type": "source_trace",
+                "source_trace_id": "trace_1",
+                "connected_source_port_ids": ["nonexistent_port"],
+                "connected_source_net_ids": [],
+            },
+        ]
+        file_path = tmp_path / "bad_trace.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        assert not result.is_valid
+        assert any("non-existent" in str(e) for e in result.errors)
+
+    def test_invalid_trace_net_ref(self, tmp_path: Path):
+        """Test that trace referencing non-existent net is caught."""
+        circuit = [
+            {"type": "source_component", "source_component_id": "comp_1", "name": "R1"},
+            {"type": "source_port", "source_port_id": "port_1", "source_component_id": "comp_1", "name": "1"},
+            {
+                "type": "source_trace",
+                "source_trace_id": "trace_1",
+                "connected_source_port_ids": ["port_1"],
+                "connected_source_net_ids": ["nonexistent_net"],
+            },
+        ]
+        file_path = tmp_path / "bad_net.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        assert not result.is_valid
+        assert any("non-existent" in str(e) for e in result.errors)
+
+
+class TestTraceConnections:
+    """Tests for trace connection validation."""
+
+    def test_trace_without_ports(self, tmp_path: Path):
+        """Test that trace without ports is caught."""
+        circuit = [
+            {"type": "source_net", "source_net_id": "net_1", "name": "VCC"},
+            {
+                "type": "source_trace",
+                "source_trace_id": "trace_1",
+                "connected_source_port_ids": [],
+                "connected_source_net_ids": ["net_1"],
+            },
+        ]
+        file_path = tmp_path / "no_ports.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        assert not result.is_valid
+        assert any("no connected ports" in str(e).lower() for e in result.errors)
+
+    def test_trace_single_port_warning(self, tmp_path: Path):
+        """Test that trace with only one port and no net warns."""
+        circuit = [
+            {"type": "source_component", "source_component_id": "comp_1", "name": "R1"},
+            {"type": "source_port", "source_port_id": "port_1", "source_component_id": "comp_1", "name": "1"},
+            {
+                "type": "source_trace",
+                "source_trace_id": "trace_1",
+                "connected_source_port_ids": ["port_1"],
+                "connected_source_net_ids": [],
+            },
+        ]
+        file_path = tmp_path / "single_port.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        # Should have warning about floating connection
+        assert any("floating" in str(w).lower() for w in result.warnings)
+
+    def test_valid_two_port_trace(self, tmp_path: Path):
+        """Test that trace connecting two ports is valid."""
+        circuit = [
+            {"type": "source_component", "source_component_id": "comp_1", "name": "R1"},
+            {"type": "source_component", "source_component_id": "comp_2", "name": "R2"},
+            {"type": "source_port", "source_port_id": "port_1", "source_component_id": "comp_1", "name": "1"},
+            {"type": "source_port", "source_port_id": "port_2", "source_component_id": "comp_2", "name": "1"},
+            {
+                "type": "source_trace",
+                "source_trace_id": "trace_1",
+                "connected_source_port_ids": ["port_1", "port_2"],
+                "connected_source_net_ids": [],
+            },
+        ]
+        file_path = tmp_path / "two_ports.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        assert result.is_valid
+
+
+class TestSourceGroup:
+    """Tests for source_group validation."""
+
+    def test_valid_group(self, tmp_path: Path):
+        """Test that valid source_group is accepted."""
+        circuit = [
+            {"type": "source_group", "source_group_id": "group_1", "name": "Power Supply", "subcircuit_id": "power"},
+            {"type": "source_component", "source_component_id": "comp_1", "name": "U1", "subcircuit_id": "power"},
+        ]
+        file_path = tmp_path / "group.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        assert result.is_valid
+
+    def test_invalid_parent_group_ref(self, tmp_path: Path):
+        """Test that invalid parent_source_group_id is caught."""
+        circuit = [
+            {"type": "source_group", "source_group_id": "group_1", "name": "Sub", "parent_source_group_id": "nonexistent"},
+        ]
+        file_path = tmp_path / "bad_parent.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        assert not result.is_valid
+        assert any("non-existent" in str(e) for e in result.errors)

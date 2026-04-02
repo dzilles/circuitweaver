@@ -1,18 +1,12 @@
-"""CircuitWeaver - MCP server for generating KiCad schematics from Circuit JSON."""
+"""CircuitWeaver - Circuit JSON netlist tools for AI-assisted electronic design."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "CircuitWeaver Contributors"
 
 from circuitweaver.types.circuit_json import (
     CircuitElement,
-    SchematicBox,
-    SchematicComponent,
-    SchematicNetLabel,
-    SchematicPort,
-    SchematicSheet,
-    SchematicText,
-    SchematicTrace,
     SourceComponent,
+    SourceGroup,
     SourceNet,
     SourcePort,
     SourceTrace,
@@ -25,14 +19,7 @@ __all__ = [
     "SourcePort",
     "SourceNet",
     "SourceTrace",
-    # Schematic types
-    "SchematicSheet",
-    "SchematicComponent",
-    "SchematicPort",
-    "SchematicTrace",
-    "SchematicBox",
-    "SchematicNetLabel",
-    "SchematicText",
+    "SourceGroup",
     # Union type
     "CircuitElement",
 ]

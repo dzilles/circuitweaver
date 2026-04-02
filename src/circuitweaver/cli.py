@@ -18,9 +18,15 @@ error_console = Console(stderr=True)
 @click.version_option(version=__version__, prog_name="circuitweaver")
 @click.pass_context
 def main(ctx: click.Context) -> None:
-    """CircuitWeaver - Generate KiCad schematics from Circuit JSON.
+    """CircuitWeaver - Circuit JSON netlist tools.
 
-    An MCP server and CLI tool for AI-assisted electronic schematic design.
+    An MCP server and CLI for AI-assisted electronic design.
+
+    Workflow:
+    1. Generate logic JSON (source_* elements) with LLM
+    2. Validate with: circuitweaver validate logic.json
+    3. Auto-layout (Phase 2) will generate schematic
+    4. Compile to KiCad (Phase 2)
     """
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
@@ -84,19 +90,17 @@ def serve(transport: str, port: int, host: str, tools: Optional[str]) -> None:
     help="Output format for validation results.",
 )
 def validate(input_file: Path, output_format: str) -> None:
-    """Validate a Circuit JSON file.
+    """Validate a Circuit JSON file (source_* elements).
 
     Checks for:
-    - Integer coordinates (no floats)
-    - Orthogonal traces (no diagonals)
-    - Components within box bounds
-    - Source-first rule compliance
     - Unique IDs
-    - Hierarchy link consistency
+    - Valid references (port→component, trace→port, etc.)
+    - Valid trace connections
+    - Hierarchy structure
 
     Example:
 
-        circuitweaver validate design.json
+        circuitweaver validate logic.json
     """
     from circuitweaver.validator import validate_circuit_file
 
@@ -115,96 +119,6 @@ def validate(input_file: Path, output_format: str) -> None:
                     console.print(f"  - {warning}")
         else:
             error_console.print(f"[red]Invalid[/red] {input_file}")
-            error_console.print(f"[red]Errors: {len(result.errors)}[/red]")
-            for error in result.errors:
-                error_console.print(f"  - {error}")
-            sys.exit(1)
-
-
-@main.command()
-@click.argument("input_file", type=click.Path(exists=True, path_type=Path))
-@click.option(
-    "-o",
-    "--output",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Output directory (default: same as input file).",
-)
-@click.option(
-    "--validate/--no-validate",
-    default=True,
-    help="Run validation before compilation.",
-)
-def compile(input_file: Path, output: Optional[Path], validate: bool) -> None:
-    """Compile Circuit JSON to KiCad schematic.
-
-    Generates .kicad_sch files from the Circuit JSON input.
-    Requires KiCad 10.0+ to be installed.
-
-    Example:
-
-        circuitweaver compile design.json -o output/
-    """
-    from circuitweaver.compiler import compile_to_kicad
-    from circuitweaver.validator import validate_circuit_file
-
-    if validate:
-        result = validate_circuit_file(input_file)
-        if not result.is_valid:
-            error_console.print("[red]Validation failed. Fix errors before compiling:[/red]")
-            for error in result.errors:
-                error_console.print(f"  - {error}")
-            sys.exit(1)
-
-    output_dir = output or input_file.parent / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        output_files = compile_to_kicad(input_file, output_dir)
-        console.print("[green]Compilation successful![/green]")
-        console.print("Generated files:")
-        for f in output_files:
-            console.print(f"  - {f}")
-    except Exception as e:
-        error_console.print(f"[red]Compilation failed: {e}[/red]")
-        sys.exit(1)
-
-
-@main.command()
-@click.argument("schematic_file", type=click.Path(exists=True, path_type=Path))
-@click.option(
-    "--format",
-    "output_format",
-    type=click.Choice(["text", "json"]),
-    default="text",
-    help="Output format for ERC results.",
-)
-def erc(schematic_file: Path, output_format: str) -> None:
-    """Run Electrical Rules Check on a KiCad schematic.
-
-    Requires KiCad 10.0+ with kicad-cli available in PATH.
-
-    Example:
-
-        circuitweaver erc output/main.kicad_sch
-    """
-    from circuitweaver.erc import run_erc
-
-    result = run_erc(schematic_file)
-
-    if output_format == "json":
-        import json
-
-        click.echo(json.dumps(result.to_dict(), indent=2))
-    else:
-        if result.passed:
-            console.print(f"[green]ERC passed[/green] {schematic_file}")
-            if result.warnings:
-                console.print(f"[yellow]Warnings: {len(result.warnings)}[/yellow]")
-                for warning in result.warnings:
-                    console.print(f"  - {warning}")
-        else:
-            error_console.print(f"[red]ERC failed[/red] {schematic_file}")
             error_console.print(f"[red]Errors: {len(result.errors)}[/red]")
             for error in result.errors:
                 error_console.print(f"  - {error}")
@@ -252,38 +166,34 @@ def search(query: str, limit: int) -> None:
 
 @main.command()
 @click.argument("symbol_id", type=str)
-def pinout(symbol_id: str) -> None:
-    """Get pinout information for a KiCad symbol.
+def pins(symbol_id: str) -> None:
+    """Get pin information for a KiCad symbol.
 
-    Shows pin names, numbers, and positions in grid units.
+    Shows pin names, numbers, directions, and types.
 
     Example:
 
-        circuitweaver pinout "Device:R"
-        circuitweaver pinout "MCU_ST_STM32G4:STM32G431CBUx"
+        circuitweaver pins "Device:R"
+        circuitweaver pins "MCU_ST_STM32G4:STM32G431CBUx"
     """
     from circuitweaver.library import get_symbol_pinout
 
     try:
-        pins = get_symbol_pinout(symbol_id)
+        pin_list = get_symbol_pinout(symbol_id)
     except ValueError as e:
         error_console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
-    table = Table(title=f"Pinout for {symbol_id}")
-    table.add_column("Pin", style="cyan")
+    table = Table(title=f"Pins for {symbol_id}")
+    table.add_column("Pin #", style="cyan")
     table.add_column("Name")
-    table.add_column("X", justify="right")
-    table.add_column("Y", justify="right")
     table.add_column("Direction")
     table.add_column("Type")
 
-    for pin in pins:
+    for pin in pin_list:
         table.add_row(
             str(pin.number),
             pin.name,
-            str(pin.grid_offset.x),
-            str(pin.grid_offset.y),
             pin.direction,
             pin.electrical_type,
         )
@@ -319,7 +229,7 @@ def info() -> None:
         table.add_row(
             "kicad-cli",
             "[yellow]Not found[/yellow]",
-            "Required for compile/erc commands",
+            "Required for ERC (Phase 2)",
         )
 
     # KiCad libraries

@@ -21,7 +21,7 @@ Using 330Ω (nearest standard value) gives ~9mA LED current.
 
 ## Files
 
-- `circuit.json` - The Circuit JSON source file
+- `circuit.json` - The Circuit JSON source file (logic only)
 - `README.md` - This file
 
 ## Usage
@@ -29,42 +29,15 @@ Using 330Ω (nearest standard value) gives ~9mA LED current.
 ```bash
 # Validate the circuit
 circuitweaver validate circuit.json
-
-# Compile to KiCad schematic
-circuitweaver compile circuit.json -o output/
-
-# Run ERC (requires KiCad)
-circuitweaver erc output/main.kicad_sch
-```
-
-## ASCII Art Schematic
-
-```
-┌──────────────────[LED Indicator]──────────────────┐
-│  5V input, 10mA LED current                       │
-│  R = (Vcc - Vf) / If                              │
-├───────────────────────────────────────────────────┤
-│                                                   │
-│                      ┌───────────┐                │
-│   VCC ───────────────┤ R1  330Ω ├─────┐          │
-│                      └───────────┘     │          │
-│                                        │          │
-│                                    ┌───┴───┐      │
-│                                    │ LED1  │      │
-│                                    │  Red  ├──GND │
-│                                    └───────┘      │
-│                                                   │
-└───────────────────────────────────────────────────┘
 ```
 
 ## Circuit JSON Structure
 
-The circuit demonstrates:
+This example demonstrates the **logic-only** format with `source_*` elements:
 
-1. **Source Components**: `source_component` for R1 and LED1
-2. **Source Nets**: `source_net` for VCC and GND
-3. **Schematic Box**: Visual grouping with title and description
-4. **Schematic Components**: Placement at grid coordinates
-5. **Schematic Ports**: Pin connection points
-6. **Schematic Traces**: Orthogonal wiring between ports
-7. **Net Labels**: Power rail connections
+1. **source_component**: Define parts (R1, LED1) with values and footprints
+2. **source_port**: Define pins on each component
+3. **source_net**: Define named signals (VCC, GND)
+4. **source_trace**: Connect ports together and to nets
+
+The auto-layout tool (Phase 2) will generate the visual schematic from this logic.
