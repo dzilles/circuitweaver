@@ -214,6 +214,7 @@ class SchematicNetLabel(SchematicElementBase):
     type: Literal["schematic_net_label"] = "schematic_net_label"
     schematic_net_label_id: str = Field(..., description="Unique identifier")
     source_net_id: str = Field(..., description="Logical net reference")
+    source_port_id: Optional[str] = Field(default=None, description="Port to snap to")
     center: Point = Field(..., description="Coordinate")
     text: str = Field(..., description="Label text")
     anchor_side: Literal["left", "right", "top", "bottom"] = "left"
@@ -236,6 +237,7 @@ class SchematicHierarchicalLabel(SchematicElementBase):
     type: Literal["schematic_hierarchical_label"] = "schematic_hierarchical_label"
     schematic_hierarchical_label_id: str = Field(..., description="Unique identifier")
     source_net_id: str = Field(..., description="Logical net reference")
+    source_port_id: Optional[str] = Field(default=None, description="Port to snap to")
     center: Point = Field(..., description="Coordinate")
     text: str = Field(..., description="Label text")
 
