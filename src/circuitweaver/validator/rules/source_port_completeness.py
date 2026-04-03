@@ -19,6 +19,7 @@ class SourcePortCompletenessRule(ValidationRule):
     Checks:
     - Each source_component has a symbol_id (Warning if missing)
     - Each pin defined in the KiCad symbol has a matching source_port (Error if missing)
+    - Source ports with do_not_connect: true issue a warning (Intentional open)
     """
 
     @property
@@ -41,6 +42,16 @@ class SourcePortCompletenessRule(ValidationRule):
         for element in elements:
             if isinstance(element, SourcePort):
                 component_ports[element.source_component_id].append(element)
+                
+                # ADD WARNING for do_not_connect
+                if element.do_not_connect:
+                    result.add_warning(
+                        self.name,
+                        f"source_port '{element.source_port_id}' (pin {element.pin_number}) "
+                        f"on component '{element.source_component_id}' is marked 'do_not_connect'. "
+                        f"Connection is postponed or uncertain.",
+                        element_id=element.source_port_id
+                    )
 
         # Check each component
         for element in elements:
@@ -75,7 +86,6 @@ class SourcePortCompletenessRule(ValidationRule):
             defined_ports = component_ports[comp_id]
             
             # Create sets for easy lookup of defined pin numbers and names
-            # We treat both as strings for comparison
             defined_numbers = {str(p.pin_number) for p in defined_ports if p.pin_number is not None}
             defined_names = {p.name for p in defined_ports}
 

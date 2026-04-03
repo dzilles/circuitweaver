@@ -206,6 +206,10 @@ class SchematicBox(SchematicElementBase):
     height: float
     is_hierarchical_sheet: bool = Field(default=False)
     name: Optional[str] = None
+    
+    # Offsets for Sheetname and Sheetfile properties relative to (x, y)
+    name_offset: Point = Field(default_factory=lambda: Point(x=0, y=-10))
+    file_offset: Point = Field(default_factory=lambda: Point(x=0, y=10))
 
 
 class SchematicNetLabel(SchematicElementBase):
@@ -215,6 +219,7 @@ class SchematicNetLabel(SchematicElementBase):
     schematic_net_label_id: str = Field(..., description="Unique identifier")
     source_net_id: str = Field(..., description="Logical net reference")
     source_port_id: Optional[str] = Field(default=None, description="Port to snap to")
+    schematic_hierarchical_pin_id: Optional[str] = Field(default=None, description="H-Pin to snap to")
     center: Point = Field(..., description="Coordinate")
     text: str = Field(..., description="Label text")
     anchor_side: Literal["left", "right", "top", "bottom"] = "left"
@@ -240,6 +245,7 @@ class SchematicHierarchicalLabel(SchematicElementBase):
     source_port_id: Optional[str] = Field(default=None, description="Port to snap to")
     center: Point = Field(..., description="Coordinate")
     text: str = Field(..., description="Label text")
+    anchor_side: Literal["left", "right", "top", "bottom"] = "left"
 
 
 class SchematicText(SchematicElementBase):

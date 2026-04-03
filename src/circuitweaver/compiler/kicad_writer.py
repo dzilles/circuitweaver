@@ -68,6 +68,7 @@ class KiCadWriter:
         sheet_pins = [e for e in sheet_elements if isinstance(e, SchematicHierarchicalPin)]
         sheet_h_labels = [e for e in sheet_elements if isinstance(e, SchematicHierarchicalLabel)]
         sheet_net_labels = [e for e in sheet_elements if isinstance(e, SchematicNetLabel)]
+        sheet_no_connects = [e for e in sheet_elements if isinstance(e, SchematicNoConnect)]
         
         # 1. Symbol Library definitions
         lines.append("  (lib_symbols")
@@ -100,7 +101,6 @@ class KiCadWriter:
                     point_counts[(int(round(edge.from_.x)), int(round(edge.from_.y)))] += 1
                     point_counts[(int(round(edge.to.x)), int(round(edge.to.y)))] += 1
         
-        # Junctions for pins/labels
         for pin in sheet_pins:
             point_counts[(int(round(pin.center.x)), int(round(pin.center.y)))] += 1
         for lbl in sheet_h_labels:
@@ -114,7 +114,7 @@ class KiCadWriter:
                 y_mm = self._grid_to_mm(gy)
                 lines.append(f'  (junction (at {x_mm} {y_mm}) (uuid "{self._new_uuid()}"))')
 
-        # 5. Labels & Text
+        # 5. Labels & Text & No-Connects
         for element in sheet_elements:
             if isinstance(element, SchematicNetLabel):
                 lines.extend(self._write_label(element))
@@ -122,6 +122,8 @@ class KiCadWriter:
                 lines.extend(self._write_hierarchical_label(element))
             elif isinstance(element, SchematicText):
                 lines.extend(self._write_text(element))
+            elif isinstance(element, SchematicNoConnect):
+                lines.extend(self._write_no_connect(element))
 
         # 6. Graphic Boxes
         for element in sheet_elements:
@@ -136,11 +138,22 @@ class KiCadWriter:
 
         return "\n".join(lines)
 
+    def _write_no_connect(self, nc: SchematicNoConnect) -> List[str]:
+        if not nc.position: return []
+        x = self._grid_to_mm(nc.position.x)
+        y = self._grid_to_mm(nc.position.y)
+        return [f'  (no_connect (at {x} {y}) (uuid "{self._new_uuid()}"))']
+
     def _write_hierarchical_sheet(self, box: SchematicBox, pins: List[SchematicHierarchicalPin]) -> List[str]:
         x = self._grid_to_mm(box.x); y = self._grid_to_mm(box.y)
         w = self._grid_to_mm(box.width); h = self._grid_to_mm(box.height)
         sheet_name = box.name or box.schematic_box_id
         file_name = f"{box.schematic_box_id.replace('box_', '')}.kicad_sch"
+        
+        nx_mm = self._grid_to_mm(box.x + box.name_offset.x)
+        ny_mm = self._grid_to_mm(box.y + box.name_offset.y)
+        fx_mm = self._grid_to_mm(box.x + box.file_offset.x)
+        fy_mm = self._grid_to_mm(box.y + box.file_offset.y)
         
         lines = [
             f'  (sheet (at {x} {y}) (size {w} {h})',
@@ -148,8 +161,8 @@ class KiCadWriter:
             '    (stroke (width 0.1524) (type solid))',
             '    (fill (color 0 0 0 0))',
             f'    (uuid "{self._new_uuid()}")',
-            f'    (property "Sheetname" "{sheet_name}" (at {x} {self._grid_to_mm(box.y - 10)} 0) (effects (font (size 1.27 1.27)) (justify left bottom)))',
-            f'    (property "Sheetfile" "{file_name}" (at {x} {self._grid_to_mm(box.y + box.height + 10)} 0) (effects (font (size 1.27 1.27)) (justify left top)))'
+            f'    (property "Sheetname" "{sheet_name}" (at {nx_mm} {ny_mm} 0) (effects (font (size 1.27 1.27)) (justify left top)))',
+            f'    (property "Sheetfile" "{file_name}" (at {fx_mm} {fy_mm} 0) (effects (font (size 1.27 1.27)) (justify left top)))'
         ]
         for pin in pins:
             px = self._grid_to_mm(pin.center.x)
@@ -162,7 +175,10 @@ class KiCadWriter:
 
     def _write_hierarchical_label(self, label: SchematicHierarchicalLabel) -> List[str]:
         x = self._grid_to_mm(label.center.x); y = self._grid_to_mm(label.center.y)
-        return [f'  (hierarchical_label "{label.text}" (shape input) (at {x} {y} 0) (effects (font (size 1.27 1.27)) (justify left)) (uuid "{self._new_uuid()}"))']
+        # Use angle AND justification for sub-sheet hierarchical labels
+        angle = {"right": 0, "top": 90, "left": 180, "bottom": 270}.get(label.anchor_side, 0)
+        justify = label.anchor_side
+        return [f'  (hierarchical_label "{label.text}" (shape input) (at {x} {y} {angle}) (effects (font (size 1.27 1.27)) (justify {justify})) (uuid "{self._new_uuid()}"))']
 
     def _resolve_lib_id(self, comp: SchematicComponent, source: Optional[SourceComponent]) -> str:
         if comp.symbol_name and ":" in comp.symbol_name: return comp.symbol_name
@@ -179,8 +195,6 @@ class KiCadWriter:
             lib_parts = lib_id.split(":", 1)
             if len(lib_parts) < 2: continue
             lib_name, sym_name = lib_parts
-            
-            # Simple unique ID to avoid "prefix" errors
             counter += 1
             embedded_name = f"Sym_{counter}"
             lib_id_to_lib_name[lib_id] = embedded_name
@@ -222,7 +236,8 @@ class KiCadWriter:
     def _write_label(self, label: SchematicNetLabel) -> List[str]:
         x = self._grid_to_mm(label.center.x); y = self._grid_to_mm(label.center.y)
         angle = {"right": 0, "top": 90, "left": 180, "bottom": 270}.get(label.anchor_side, 0)
-        return [f'  (label "{label.text}" (at {x} {y} {angle}) (effects (font (size 1.27 1.27)) (justify left)) (uuid "{self._new_uuid()}"))']
+        justify = label.anchor_side
+        return [f'  (label "{label.text}" (at {x} {y} {angle}) (effects (font (size 1.27 1.27)) (justify {justify})) (uuid "{self._new_uuid()}"))']
 
     def _write_text(self, text: SchematicText) -> List[str]:
         x = self._grid_to_mm(text.position.x); y = self._grid_to_mm(text.position.y)

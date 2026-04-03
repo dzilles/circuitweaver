@@ -213,9 +213,39 @@ Defines a hierarchical block, subcircuit, or logical cluster.
 
 ---
 
-## The "Define Every Pin" Rule
+### Handling Unconnected Pins
 
-Before you can connect a pin in a `source_trace`, you **MUST** define a `source_port` for it.
+There are two ways to handle pins that are not connected to any trace:
+
+1.  **`do_not_connect: true` (Logical Intent):**
+    - Set this flag on a `source_port`.
+    - **Usage:** Use this if you are **unsure** if a pin should be connected, or if you are **postponing** the connection to a later design phase.
+    - **Result:** The validator will issue a **Warning** to remind you that this pin is currently open.
+
+2.  **`schematic_no_connect` (Visual Confirmation):**
+    - Define a separate `schematic_no_connect` element referencing the port.
+    - **Usage:** Use this **ONLY** when you are **absolutely certain** that the pin must remain unconnected (e.g., NC pins on an IC).
+    - **Result:** KiCad will place a visual **"X" symbol** on the pin and the ERC will ignore it.
+
+```json
+// Example: Postponed/Uncertain connection (Logical Warning)
+{
+  "type": "source_port",
+  "source_port_id": "p_u1_5",
+  "source_component_id": "u1",
+  "name": "GPIO5",
+  "do_not_connect": true
+}
+
+// Example: Confirmed No-Connect (Visual "X")
+{
+  "type": "schematic_no_connect",
+  "schematic_no_connect_id": "nc_u1_10",
+  "schematic_port_id": "sch_p_u1_10"
+}
+```
+
+---
 
 ### Workflow
 
