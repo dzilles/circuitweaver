@@ -226,6 +226,11 @@ def get_expanded_symbol_definition(symbol_name: str, library_name: str, rename_t
             if inner_match:
                 base_content = inner_match.group(1)
                 
+                # Rename the base_name prefixes to symbol_name in base_content
+                # so that they match the child symbol name before applying rename_to.
+                base_content = base_content.replace(f'"{base_name}_', f'"{symbol_name}_')
+                base_content = base_content.replace(f'"{base_name}"', f'"{symbol_name}"')
+                
                 # Merge into child: Find the index of the LAST closing paren
                 # Since symbol_def was returned by _extract_balanced_sexp, it's a single block.
                 last_paren_idx = symbol_def.rfind(')')
