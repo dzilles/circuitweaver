@@ -150,9 +150,8 @@ class KiCadWriter:
         sheet_name = box.name or box.schematic_box_id
         file_name = f"{box.schematic_box_id.replace('box_', '')}.kicad_sch"
         
-        nx_mm = self._grid_to_mm(box.x + box.name_offset.x)
+        x_mid_mm = self._grid_to_mm(box.x + box.width / 2)
         ny_mm = self._grid_to_mm(box.y + box.name_offset.y)
-        fx_mm = self._grid_to_mm(box.x + box.file_offset.x)
         fy_mm = self._grid_to_mm(box.y + box.file_offset.y)
         
         lines = [
@@ -161,8 +160,8 @@ class KiCadWriter:
             '    (stroke (width 0.1524) (type solid))',
             '    (fill (color 0 0 0 0))',
             f'    (uuid "{self._new_uuid()}")',
-            f'    (property "Sheetname" "{sheet_name}" (at {nx_mm} {ny_mm} 0) (effects (font (size 1.27 1.27)) (justify left top)))',
-            f'    (property "Sheetfile" "{file_name}" (at {fx_mm} {fy_mm} 0) (effects (font (size 1.27 1.27)) (justify left top)))'
+            f'    (property "Sheetname" "{sheet_name}" (at {x_mid_mm} {ny_mm} 0) (effects (font (size 1.27 1.27)) (justify left top)))',
+            f'    (property "Sheetfile" "{file_name}" (at {x_mid_mm} {fy_mm} 0) (effects (font (size 1.27 1.27)) (justify left top)))'
         ]
         for pin in pins:
             px = self._grid_to_mm(pin.center.x)

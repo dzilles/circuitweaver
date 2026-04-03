@@ -345,48 +345,33 @@ class AutoLayoutEngine:
                 })
                 continue
 
-            body_node = {
-                "id": f"inner_{bid}", 
-                "width": inner_bw, "height": inner_bh, 
-                "ports": inner_ports, 
-                "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}
-            }
-
-            # Virtual Text Nodes
+            body_id = f"inner_body_{bid}"
+            name_id = f"text_name_{bid}"
+            file_id = f"text_file_{bid}"
+            
             name_text = cs.name or cs.source_group_id
             file_text = f"File: {cs.source_group_id.replace('box_', '')}.kicad_sch"
-            
+
             nodes.append({
                 "id": bid,
                 "children": [
-                    {"id": f"name_{bid}", "width": len(name_text) * 10 + 40, "height": 30},
-                    body_node,
-                    {"id": f"file_{bid}", "width": len(file_text) * 8 + 40, "height": 30}
+                    {"id": name_id, "width": len(name_text) * 10 + 60, "height": 40},
+                    {"id": body_id, "width": inner_bw, "height": inner_bh, "ports": inner_ports, "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}},
+                    {"id": file_id, "width": len(file_text) * 8 + 60, "height": 40}
+                ],
+                "edges": [
+                    {"id": f"edge_v1_{bid}", "sources": [name_id], "targets": [body_id]},
+                    {"id": f"edge_v2_{bid}", "sources": [body_id], "targets": [file_id]}
                 ],
                 "layoutOptions": {
                     "org.eclipse.elk.algorithm": "layered",
-                    "org.eclipse.elk.direction": "DOWN", # Stack vertically
-                    "org.eclipse.elk.spacing.nodeNode": "30",
-                    "org.eclipse.elk.padding": "[top=20,left=20,bottom=20,right=20]"
+                    "org.eclipse.elk.direction": "DOWN", 
+                    "org.eclipse.elk.spacing.nodeNode": "100", 
+                    "org.eclipse.elk.padding": "[top=100,left=50,bottom=100,right=50]"
                 }
             })
         
-        # 4. Standalone (Orphan) Labels (Hierarchical or Net)
-        orphan_labels = [
-            lbl for lbl in generated 
-            if isinstance(lbl, (SchematicNetLabel, SchematicHierarchicalLabel))
-            and lbl.sheet_id == sheet_id
-            and not any(lbl.source_port_id == p.source_port_id for p in all_ports if p.source_component_id in [c.source_component_id for c in components])
-            and not (isinstance(lbl, SchematicNetLabel) and lbl.schematic_hierarchical_pin_id)
-        ]
-        for lbl in orphan_labels:
-            lw = len(lbl.text) * 8 + 40
-            nodes.append({
-                "id": f"orphan_label_{get_element_id(lbl)}",
-                "width": lw, "height": 20
-            })
-
-        # 5. Global Edges
+        # 4. Global Edges
         edges = []
         for conn in connectivity:
             sip = conn["ports"]
@@ -421,18 +406,9 @@ class AutoLayoutEngine:
             
             nx, ny = snap(node["x"]), snap(node["y"])
             
-            # Handle Orphan Labels
-            if cid.startswith("orphan_label_"):
-                # Extract the element ID from the node ID
-                eid = cid.replace("orphan_label_", "")
-                lbl = next((e for e in generated if get_element_id(e) == eid), None)
-                if lbl:
-                    lbl.center = Point(x=nx, y=ny)
-                continue
-            
             # Handle Hierarchical Sheet Boxes (look for inner body)
             if cid.startswith("box_"):
-                inner = next((c for c in node.get("children", []) if c["id"].startswith("inner_")), None)
+                inner = next((c for c in node.get("children", []) if c["id"].startswith("inner_body_")), None)
                 if inner:
                     # Final box position is parent (nx, ny) + offset of inner body
                     bx = snap(nx + inner["x"])
@@ -440,8 +416,8 @@ class AutoLayoutEngine:
                     bw, bh = snap(inner["width"]), snap(inner["height"])
                     
                     # Extract text offsets
-                    name_node = next((c for c in node.get("children", []) if c["id"].startswith("name_")), None)
-                    file_node = next((c for c in node.get("children", []) if c["id"].startswith("file_")), None)
+                    name_node = next((c for c in node.get("children", []) if c["id"].startswith("text_name_")), None)
+                    file_node = next((c for c in node.get("children", []) if c["id"].startswith("text_file_")), None)
                     
                     # Calculate offsets relative to box top-left
                     name_off = Point(x=snap(name_node["x"] - inner["x"]), y=snap(name_node["y"] - inner["y"])) if name_node else Point(x=0, y=-20)
