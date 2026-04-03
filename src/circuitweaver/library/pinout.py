@@ -82,9 +82,17 @@ def get_symbol_info(symbol_id: str) -> SymbolInfo:
     if extends_match:
         base_name = extends_match.group(1)
         # Recursively get info for the base symbol
-        return get_symbol_info(f"{lib_name}:{base_name}")
-
-    pins = _extract_pins(symbol_content)
+        base_info = get_symbol_info(f"{lib_name}:{base_name}")
+        # Extract pins from the child as well (children can have their own pins)
+        child_pins = _extract_pins(symbol_content)
+        # Merge pins (keep unique by number)
+        all_pins = {p.number: p for p in base_info.pins}
+        for p in child_pins:
+            all_pins[p.number] = p
+        
+        pins = list(all_pins.values())
+    else:
+        pins = _extract_pins(symbol_content)
 
     if not pins:
         return SymbolInfo(
@@ -167,8 +175,9 @@ def _extract_pins(symbol_content: str) -> list[PinInfo]:
         number = num_match.group(1) if num_match else ""
         
         # Convert KiCad mm to our grid units (1 grid = 0.127mm)
+        # Note: In KiCad symbol files, Y goes UP. In schematics, Y goes DOWN. Negate Y.
         grid_x = int(round(x_mm / 0.127))
-        grid_y = int(round(y_mm / 0.127))
+        grid_y = int(round(-y_mm / 0.127))
         
         pins.append(PinInfo(
             number=number,

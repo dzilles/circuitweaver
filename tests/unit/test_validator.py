@@ -54,7 +54,7 @@ class TestValidateCircuitFile:
     def test_unknown_type(self, tmp_path: Path):
         """Test that unknown element types are caught."""
         file_path = tmp_path / "unknown.json"
-        file_path.write_text('[{"type": "schematic_component", "schematic_component_id": "x"}]')
+        file_path.write_text('[{"type": "unknown_type", "id": "x"}]')
 
         result = validate_circuit_file(file_path)
 
