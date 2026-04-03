@@ -9,6 +9,15 @@ from pydantic import ValidationError as PydanticValidationError
 
 from circuitweaver.types.circuit_json import (
     CircuitElement,
+    SchematicBox,
+    SchematicComponent,
+    SchematicHierarchicalLabel,
+    SchematicHierarchicalPin,
+    SchematicNetLabel,
+    SchematicNoConnect,
+    SchematicPort,
+    SchematicText,
+    SchematicTrace,
     SourceComponent,
     SourceGroup,
     SourceNet,
@@ -120,6 +129,15 @@ def _parse_element(raw: dict[str, Any]) -> CircuitElement:
         "source_net": SourceNet,
         "source_trace": SourceTrace,
         "source_group": SourceGroup,
+        "schematic_component": SchematicComponent,
+        "schematic_port": SchematicPort,
+        "schematic_trace": SchematicTrace,
+        "schematic_box": SchematicBox,
+        "schematic_net_label": SchematicNetLabel,
+        "schematic_hierarchical_pin": SchematicHierarchicalPin,
+        "schematic_hierarchical_label": SchematicHierarchicalLabel,
+        "schematic_text": SchematicText,
+        "schematic_no_connect": SchematicNoConnect,
     }
 
     if element_type not in type_map:
@@ -140,6 +158,15 @@ def _get_element_id_from_raw(raw: dict[str, Any]) -> str | None:
         "source_net_id",
         "source_trace_id",
         "source_group_id",
+        "schematic_component_id",
+        "schematic_port_id",
+        "schematic_trace_id",
+        "schematic_box_id",
+        "schematic_net_label_id",
+        "schematic_hierarchical_pin_id",
+        "schematic_hierarchical_label_id",
+        "schematic_text_id",
+        "schematic_no_connect_id",
     ]:
         if key in raw:
             return raw[key]
@@ -153,6 +180,9 @@ def _build_validation_context(elements: list[CircuitElement]) -> dict[str, Any]:
     source_nets: dict[str, SourceNet] = {}
     source_traces: dict[str, SourceTrace] = {}
     source_groups: dict[str, SourceGroup] = {}
+    schematic_components: dict[str, SchematicComponent] = {}
+    schematic_ports: dict[str, SchematicPort] = {}
+    schematic_traces: dict[str, SchematicTrace] = {}
 
     # Also index by subcircuit_id
     subcircuit_ids: set[str] = set()
@@ -172,6 +202,12 @@ def _build_validation_context(elements: list[CircuitElement]) -> dict[str, Any]:
             source_groups[element.source_group_id] = element
             if element.subcircuit_id:
                 subcircuit_ids.add(element.subcircuit_id)
+        elif isinstance(element, SchematicComponent):
+            schematic_components[element.schematic_component_id] = element
+        elif isinstance(element, SchematicPort):
+            schematic_ports[element.schematic_port_id] = element
+        elif isinstance(element, SchematicTrace):
+            schematic_traces[element.schematic_trace_id] = element
 
     return {
         "source_components": source_components,
@@ -179,6 +215,9 @@ def _build_validation_context(elements: list[CircuitElement]) -> dict[str, Any]:
         "source_nets": source_nets,
         "source_traces": source_traces,
         "source_groups": source_groups,
+        "schematic_components": schematic_components,
+        "schematic_ports": schematic_ports,
+        "schematic_traces": schematic_traces,
         "subcircuit_ids": subcircuit_ids,
         "elements": elements,
     }

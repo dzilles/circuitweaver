@@ -1,5 +1,5 @@
-"""Electrical Rules Check for KiCad schematics."""
+"""ERC (Electrical Rules Check) interface."""
 
-from circuitweaver.erc.checker import run_erc, ERCResult
+from circuitweaver.erc.checker import ERCChecker
 
-__all__ = ["run_erc", "ERCResult"]
+__all__ = ["ERCChecker"]

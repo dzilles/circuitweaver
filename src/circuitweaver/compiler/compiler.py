@@ -1,133 +1,84 @@
-"""Main compiler for Circuit JSON to KiCad schematic."""
+"""Compiler for Circuit JSON to KiCad schematic with multi-sheet support."""
 
-import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
+from circuitweaver.compiler.autolayout import AutoLayoutEngine
 from circuitweaver.compiler.kicad_writer import KiCadWriter
-from circuitweaver.types.circuit_json import (
-    CircuitElement,
-    SchematicBox,
-    SchematicComponent,
-    SchematicNetLabel,
-    SchematicPort,
-    SchematicSheet,
-    SchematicText,
-    SchematicTrace,
-    SourceComponent,
-)
-from circuitweaver.types.errors import CompilationError
+from circuitweaver.erc.checker import ERCChecker
+from circuitweaver.types.circuit_json import CircuitElement, SourceComponent
 
 logger = logging.getLogger(__name__)
 
 
-def compile_to_kicad(input_file: Path, output_dir: Path) -> List[Path]:
-    """Compile Circuit JSON to KiCad schematic files."""
-    try:
-        with open(input_file) as f:
-            raw_data = json.load(f)
-    except Exception as e:
-        raise CompilationError(f"Failed to load Circuit JSON: {e}", phase="load")
+class Compiler:
+    """Orchestrates the conversion of Circuit JSON to KiCad files."""
 
-    if not isinstance(raw_data, list):
-        raise CompilationError("Circuit JSON must be a list of elements", phase="load")
+    def __init__(self, helper_path: Optional[str] = None, kicad_cli_path: str = "kicad-cli"):
+        self.layout_engine = AutoLayoutEngine(helper_path=helper_path)
+        self.writer = KiCadWriter()
+        self.erc_checker = ERCChecker(kicad_cli_path=kicad_cli_path)
 
-    # Parse elements
-    elements = _parse_elements(raw_data)
+    def compile(self, elements: List[CircuitElement], output_dir: Path, project_name: str = "project") -> Path:
+        """Compile Circuit JSON to KiCad schematic files.
+        
+        1. Run auto-layout to generate schematic_* elements if missing.
+        2. Identify all sheets generated.
+        3. Use KiCadWriter to generate multiple .kicad_sch and one .kicad_pro file.
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 1. Run Layout
+        # Check if we already have schematic layout data
+        has_layout = any(e.type.startswith("schematic_") for e in elements)
+        
+        if not has_layout:
+            logger.info("No layout found, running hierarchical auto-layout engine...")
+            elements = self.layout_engine.layout(elements)
+        else:
+            logger.info("Layout found in input, skipping auto-layout.")
 
-    # Initialize stateful compiler context
-    compiler = CircuitCompiler()
-    compiler.load(elements)
+        # 2. Identify all sheets generated (including root)
+        all_sheet_ids: Set[str] = set()
+        for e in elements:
+            if hasattr(e, "sheet_id"):
+                all_sheet_ids.add(e.sheet_id)
+        if not all_sheet_ids:
+            all_sheet_ids.add("root")
 
-    # Group elements by sheet
-    sheets = _group_by_sheet(elements)
+        # 3. Prepare common context
+        source_components: Dict[str, SourceComponent] = {
+            e.source_component_id: e for e in elements if isinstance(e, SourceComponent)
+        }
 
-    # Generate KiCad files
-    output_files: List[Path] = []
-    writer = KiCadWriter()
-    project_name = input_file.stem
-
-    for sheet_id, sheet_elements in sheets.items():
-        # Use project name for root sheet to match project file references
-        sheet_name = sheet_id or project_name
-        output_file = output_dir / f"{sheet_name}.kicad_sch"
-
-        # Pass global source_components for resolution
-        content = writer.write_schematic(sheet_elements, sheet_name, compiler.source_components)
-        output_file.write_text(content)
-        output_files.append(output_file)
-
-        logger.info(f"Generated {output_file}")
-
-    # Always generate project file
-    project_file = output_dir / f"{project_name}.kicad_pro"
-    project_content = writer.write_project(project_name, list(sheets.keys()))
-    project_file.write_text(project_content)
-    output_files.append(project_file)
-
-    # Warn about orphan schematics in output directory
-    generated_names = {f.name for f in output_files if f.suffix == ".kicad_sch"}
-    for sch_file in output_dir.glob("*.kicad_sch"):
-        if sch_file.name not in generated_names:
-            logger.warning(
-                f"Existing schematic '{sch_file.name}' is not part of this project. "
-                f"Consider removing it to avoid confusion."
+        # 4. Write each Schematic file
+        root_sch_file = None
+        for sheet_id in all_sheet_ids:
+            sch_content = self.writer.write_schematic(
+                elements, 
+                sheet_id=sheet_id,
+                source_components=source_components
             )
+            
+            # Filename logic: root sheet uses project name, others use sheet_id
+            if sheet_id == "root":
+                filename = f"{project_name}.kicad_sch"
+                root_sch_file = output_dir / filename
+            else:
+                filename = f"{sheet_id}.kicad_sch"
+            
+            (output_dir / filename).write_text(sch_content)
+            logger.info(f"Wrote sheet '{sheet_id}' to {output_dir / filename}")
 
-    return output_files
+        # 5. Write Project file linking everything
+        pro_content = self.writer.write_project(project_name, list(all_sheet_ids))
+        pro_file = output_dir / f"{project_name}.kicad_pro"
+        pro_file.write_text(pro_content)
+        logger.info(f"Wrote project to {pro_file}")
 
+        return root_sch_file
 
-def _parse_elements(raw_data: List[Dict[str, Any]]) -> List[CircuitElement]:
-    """Parse raw JSON into typed elements."""
-    from circuitweaver.validator.engine import _parse_element
-
-    elements: List[CircuitElement] = []
-    for raw in raw_data:
-        try:
-            elements.append(_parse_element(raw))
-        except Exception as e:
-            logger.warning(f"Failed to parse element: {e}")
-            continue
-
-    return elements
-
-
-def _group_by_sheet(
-    elements: List[CircuitElement],
-) -> Dict[Optional[str], List[CircuitElement]]:
-    """Group elements by their sheet ID."""
-    # For now, put everything in one sheet
-    # In the future, we can look for schematic_sheet_id on elements
-    return {None: elements}
-
-
-class CircuitCompiler:
-    """Stateful compiler for Circuit JSON to KiCad."""
-
-    def __init__(self) -> None:
-        self.source_components: Dict[str, SourceComponent] = {}
-        self.schematic_components: Dict[str, SchematicComponent] = {}
-        self.traces: List[SchematicTrace] = []
-        self.boxes: List[SchematicBox] = []
-        self.labels: List[SchematicNetLabel] = []
-        self.texts: List[SchematicText] = []
-        self.ports: Dict[str, SchematicPort] = {}
-
-    def load(self, elements: List[CircuitElement]) -> None:
-        """Load and index elements."""
-        for element in elements:
-            if isinstance(element, SourceComponent):
-                self.source_components[element.source_component_id] = element
-            elif isinstance(element, SchematicComponent):
-                self.schematic_components[element.schematic_component_id] = element
-            elif isinstance(element, SchematicTrace):
-                self.traces.append(element)
-            elif isinstance(element, SchematicBox):
-                self.boxes.append(element)
-            elif isinstance(element, SchematicNetLabel):
-                self.labels.append(element)
-            elif isinstance(element, SchematicText):
-                self.texts.append(element)
-            elif isinstance(element, SchematicPort):
-                self.ports[element.schematic_port_id] = element
+    def run_erc(self, schematic_path: Path):
+        """Run ERC on a generated schematic."""
+        return self.erc_checker.run(schematic_path)

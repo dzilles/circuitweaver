@@ -185,15 +185,15 @@ Defines a logical connection between ports and/or nets.
 
 ### source_group
 
-Defines a hierarchical block or subcircuit for organizing complex designs.
+Defines a hierarchical block, subcircuit, or logical cluster.
 
 ```json
 {
   "type": "source_group",
-  "source_group_id": "group_power",
-  "name": "Power Supply",
+  "source_group_id": "group_mcu",
+  "name": "MCU Core",
   "is_subcircuit": true,
-  "subcircuit_id": "power_supply"
+  "subcircuit_id": "mcu"
 }
 ```
 
@@ -202,32 +202,14 @@ Defines a hierarchical block or subcircuit for organizing complex designs.
 
 **Optional fields:**
 - `name` - Display name for the group
-- `is_subcircuit` - True if this is a reusable subcircuit
-- `subcircuit_id` - ID used by child components
-- `parent_source_group_id` - For nested groups
+- `is_subcircuit` - **CRITICAL:** If `true`, this group becomes a separate **schematic page** in KiCad. If `false` or omitted, it is a visual cluster on the current page.
+- `subcircuit_id` - ID used by child components to declare membership.
+- `parent_source_group_id` - ID of the parent group (for nested subgroups).
 
-**Grouping components:**
+**Organization Levels:**
 
-Components belong to a group by setting `subcircuit_id`:
-
-```json
-// Define the group
-{
-  "type": "source_group",
-  "source_group_id": "group_power",
-  "name": "Power Supply",
-  "subcircuit_id": "power"
-}
-
-// Components in the group
-{
-  "type": "source_component",
-  "source_component_id": "comp_vreg",
-  "subcircuit_id": "power",
-  "name": "U1",
-  "ftype": "simple_chip"
-}
-```
+1.  **Top-Level Sheets (`is_subcircuit: true`):** Use for major functional blocks (e.g., "Power Management", "Inverter Stage"). Inter-sheet connections are handled via hierarchical pins.
+2.  **Local Clusters (`is_subcircuit: false`):** Use inside a sheet to keep related parts together (e.g., "MCU Bypass Caps", "Voltage Divider"). Inter-subgroup connections on the same page are handled via local net labels.
 
 ---
 
