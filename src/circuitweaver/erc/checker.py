@@ -39,9 +39,11 @@ class ERCChecker:
             result = subprocess.run(cmd, capture_output=True, text=True)
             
             if not report_file.exists():
+                # CAPTURE STDERR for better debugging
+                error_msg = result.stderr if result.stderr else result.stdout
                 return {
                     "is_valid": False,
-                    "errors": [f"ERC report was not generated. CLI Output: {result.stderr}"],
+                    "errors": [f"ERC report was not generated. CLI Output: {error_msg}"],
                     "warnings": []
                 }
 

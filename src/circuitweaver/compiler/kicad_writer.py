@@ -39,10 +39,8 @@ class KiCadWriter:
         return str(uuid.uuid4())
 
     def _grid_to_mm(self, grid: float) -> str:
-        """Convert grid units to millimeters with strict rounding to 5mil grid."""
-        # Use Decimal for high precision grid alignment
-        grid_int = int(round(grid))
-        val = grid_int * GRID_TO_MM
+        """Convert grid units to millimeters with strict rounding."""
+        val = Decimal(str(grid)).quantize(Decimal('1'), rounding=ROUND_HALF_UP) * GRID_TO_MM
         return "{:.4f}".format(val)
 
     def write_schematic(
@@ -102,7 +100,7 @@ class KiCadWriter:
                     point_counts[(int(round(edge.from_.x)), int(round(edge.from_.y)))] += 1
                     point_counts[(int(round(edge.to.x)), int(round(edge.to.y)))] += 1
         
-        # Add hierarchical pins/labels to junction detection for perfect weld
+        # Junctions for pins/labels
         for pin in sheet_pins:
             point_counts[(int(round(pin.center.x)), int(round(pin.center.y)))] += 1
         for lbl in sheet_h_labels:
@@ -133,6 +131,7 @@ class KiCadWriter:
         lines.append("  (sheet_instances")
         lines.append(f'    (path "/" (page "1"))')
         lines.append("  )")
+        lines.append("  (embedded_fonts no)")
         lines.append(")")
 
         return "\n".join(lines)
@@ -171,7 +170,7 @@ class KiCadWriter:
         return f"Device:QuestionBlock"
 
     def _collect_symbols_recursive(self, components: List[SchematicComponent], sources: Dict[str, SourceComponent]) -> Tuple[List[str], Dict[str, str]]:
-        embedded_defs = {}; lib_id_to_lib_name = {}; processed = set(); counter = {}
+        embedded_defs = {}; lib_id_to_lib_name = {}; processed = set(); counter = 0
         for comp in components:
             source = sources.get(comp.source_component_id)
             lib_id = self._resolve_lib_id(comp, source)
@@ -180,8 +179,10 @@ class KiCadWriter:
             lib_parts = lib_id.split(":", 1)
             if len(lib_parts) < 2: continue
             lib_name, sym_name = lib_parts
-            counter[sym_name] = counter.get(sym_name, 0) + 1
-            embedded_name = f"{sym_name}_{counter[sym_name]}"
+            
+            # Simple unique ID to avoid "prefix" errors
+            counter += 1
+            embedded_name = f"Sym_{counter}"
             lib_id_to_lib_name[lib_id] = embedded_name
             try:
                 symbol_def = get_expanded_symbol_definition(sym_name, library_name=lib_name, rename_to=embedded_name)
