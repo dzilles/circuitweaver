@@ -78,7 +78,7 @@ def get_symbol_info(symbol_id: str) -> SymbolInfo:
     symbol_content = _extract_balanced_sexp(content, symbol_start)
     
     # Check for extension: (extends "BASE_NAME")
-    extends_match = re.search(r'\(extends\s+"([^"]+)"', symbol_content)
+    extends_match = re.search(r'\(extends\s+"([^"]+)"\)', symbol_content)
     if extends_match:
         base_name = extends_match.group(1)
         # Recursively get info for the base symbol
@@ -191,15 +191,53 @@ def _angle_to_direction(angle: float) -> str:
 
 
 def get_expanded_symbol_definition(symbol_name: str, library_name: str, rename_to: Optional[str] = None) -> str:
-    """Get the full symbol definition for embedding with recursive renaming."""
+    """Get the full symbol definition for embedding, recursively handling extensions."""
     lib_paths = get_library_paths()
     lib_file = lib_paths.symbols / f"{library_name}.kicad_sym"
-    if not lib_file.exists(): raise ValueError(f"Library not found: {library_name}")
+    if not lib_file.exists(): 
+        raise ValueError(f"Library not found: {library_name}")
+    
     content = lib_file.read_text(errors="replace")
     symbol_start = _find_symbol_start(content, symbol_name)
-    if symbol_start == -1: raise ValueError(f"Symbol {symbol_name} not found")
+    if symbol_start == -1: 
+        raise ValueError(f"Symbol {symbol_name} not found in {library_name}")
+    
     symbol_def = _extract_balanced_sexp(content, symbol_start)
+    
+    result_defs = []
+    
+    # Check for extension: (extends "BASE_NAME")
+    extends_match = re.search(r'\(extends\s+"([^"]+)"\)', symbol_def)
+    if extends_match:
+        base_name = extends_match.group(1)
+        # Fetch the FULLY EXPANDED base definition (recursively)
+        base_def = get_expanded_symbol_definition(base_name, library_name)
+        
+        # Remove (extends ...) from child
+        symbol_def = symbol_def.replace(extends_match.group(0), "")
+        
+        # Extract the content from the base symbol (everything between first (symbol "NAME" ...) and last )
+        # We use a balanced paren approach to find the main base block
+        base_start = base_def.find('(')
+        if base_start != -1:
+            base_inner = _extract_balanced_sexp(base_def, base_start)
+            # Find everything inside the base_inner: (symbol "NAME" <HERE>)
+            inner_match = re.search(rf'\(symbol\s+"{re.escape(base_name)}"\s+(.*)\)\s*$', base_inner, re.DOTALL)
+            if inner_match:
+                base_content = inner_match.group(1)
+                
+                # Merge into child: Find the index of the LAST closing paren
+                # Since symbol_def was returned by _extract_balanced_sexp, it's a single block.
+                last_paren_idx = symbol_def.rfind(')')
+                if last_paren_idx != -1:
+                    symbol_def = symbol_def[:last_paren_idx] + "\n    " + base_content + "\n  )"
+
     if rename_to:
-        symbol_def = re.sub(rf'^\(symbol\s+"{re.escape(symbol_name)}"', f'(symbol "{rename_to}"', symbol_def)
+        # 1. Rename the main symbol definition
+        symbol_def = re.sub(rf'\(symbol\s+"{re.escape(symbol_name)}"', f'(symbol "{rename_to}"', symbol_def)
+        # 2. Rename all references to this name within the block (e.g. nested unit symbols)
+        symbol_def = symbol_def.replace(f'"{symbol_name}"', f'"{rename_to}"')
+        # 3. Rename any prefixed children
         symbol_def = symbol_def.replace(f'"{symbol_name}_', f'"{rename_to}_')
+    
     return symbol_def
