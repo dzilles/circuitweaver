@@ -65,12 +65,26 @@ class AutoLayoutEngine:
         all_sheet_ids = {"root"} | subcircuit_group_ids
 
         # 2. Gather symbols
+        # Map ftype to default KiCad symbols if symbol_id is missing
+        FTYPE_MAP = {
+            "simple_resistor": "Device:R",
+            "simple_capacitor": "Device:C",
+            "simple_led": "Device:LED",
+            "simple_diode": "Device:D",
+            "simple_transistor": "Device:Q_NPN_BCE",
+        }
+
+        for comp in source_components:
+            if not comp.symbol_id and comp.ftype in FTYPE_MAP:
+                comp.symbol_id = FTYPE_MAP[comp.ftype]
+
         unique_symbols: Dict[str, SymbolInfo] = {}
         for comp in source_components:
             if comp.symbol_id and comp.symbol_id not in unique_symbols:
                 try:
                     unique_symbols[comp.symbol_id] = get_symbol_info(comp.symbol_id)
-                except Exception: pass
+                except Exception as e:
+                    logger.warning(f"Could not load symbol {comp.symbol_id}: {e}")
 
         # 3. Analyze Connectivity
         connectivity_elements, sheet_connectivity = self._process_connectivity(
@@ -286,7 +300,14 @@ class AutoLayoutEngine:
         # 1. Components
         for item in components:
             symbol = symbol_map.get(item.symbol_id)
-            body_w, body_h = (symbol.width, symbol.height) if symbol else (40, 40)
+            if symbol:
+                body_w, body_h = symbol.width, symbol.height
+            else:
+                body_w, body_h = 40, 40
+            
+            # Ensure minimum size to avoid ELK issues
+            body_w = max(body_w, 10)
+            body_h = max(body_h, 10)
             
             ports = []
             symbol_pins = {p.number: p for p in symbol.pins} if symbol else {}
@@ -300,8 +321,10 @@ class AutoLayoutEngine:
                     px, py = 0, 0
                     side = "WEST"
                 
+                # Use unique port ID by prefixing with component ID
+                elk_port_id = f"{item.source_component_id}:{p.source_port_id}"
                 ports.append({
-                    "id": p.source_port_id, 
+                    "id": elk_port_id, 
                     "x": px, "y": py, 
                     "width": 0, "height": 0, 
                     "layoutOptions": {"org.eclipse.elk.port.side": side}
@@ -327,9 +350,10 @@ class AutoLayoutEngine:
                 lw = len(lbl.text) * 10 + 40
                 nodes.append({"id": lbl_node_id, "width": lw, "height": 30})
                 # Edge from component pin to label node
+                elk_port_id = f"{item.source_component_id}:{lbl.source_port_id}"
                 edges.append({
                     "id": f"edge_label_{lbl_node_id}",
-                    "sources": [f"{item.source_component_id}:{lbl.source_port_id}"],
+                    "sources": [elk_port_id],
                     "targets": [lbl_node_id]
                 })
         
@@ -349,10 +373,13 @@ class AutoLayoutEngine:
             inner_ports = []
             for i, p in enumerate(west_pins):
                 py = (i + 1) * (inner_bh // (len(west_pins) + 1))
-                inner_ports.append({"id": p.schematic_hierarchical_pin_id, "x": 0, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "WEST"}})
+                # Unique port ID for boxes too
+                elk_port_id = f"{bid}:{p.schematic_hierarchical_pin_id}"
+                inner_ports.append({"id": elk_port_id, "x": 0, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "WEST"}})
             for i, p in enumerate(east_pins):
                 py = (i + 1) * (inner_bh // (len(east_pins) + 1))
-                inner_ports.append({"id": p.schematic_hierarchical_pin_id, "x": inner_bw, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "EAST"}})
+                elk_port_id = f"{bid}:{p.schematic_hierarchical_pin_id}"
+                inner_ports.append({"id": elk_port_id, "x": inner_bw, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "EAST"}})
             
             if sheet_id != "root":
                 nodes.append({"id": bid, "width": inner_bw, "height": inner_bh, "ports": inner_ports, "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}})
@@ -384,36 +411,37 @@ class AutoLayoutEngine:
             })
         
         # 3. Global Edges
-        port_to_node = {}
+        port_to_elk_id = {}
         for item in components:
             for p in [p for p in all_ports if p.source_component_id == item.source_component_id]:
-                port_to_node[p.source_port_id] = item.source_component_id
+                port_to_elk_id[p.source_port_id] = f"{item.source_component_id}:{p.source_port_id}"
         for cs in child_sheets:
             bid = f"box_{cs.source_group_id}"
             box_pins = [e for e in generated if isinstance(e, SchematicHierarchicalPin) and e.schematic_box_id == bid]
             for p in box_pins:
-                port_to_node[p.schematic_hierarchical_pin_id] = bid
+                port_to_elk_id[p.schematic_hierarchical_pin_id] = f"{bid}:{p.schematic_hierarchical_pin_id}"
 
         for conn in connectivity:
             sip = conn["ports"]
             if not sip: continue
             if not conn["is_inter_group"] and not conn["is_inter_sheet"]:
-                src_node = port_to_node.get(sip[0])
+                src_elk_port = port_to_elk_id.get(sip[0])
                 for target_port_id in sip[1:]: 
-                    tgt_node = port_to_node.get(target_port_id)
-                    if src_node and tgt_node:
+                    tgt_elk_port = port_to_elk_id.get(target_port_id)
+                    if src_elk_port and tgt_elk_port:
                         edges.append({
                             "id": f"e_{conn['trace_id']}_{target_port_id}", 
-                            "sources": [f"{src_node}:{sip[0]}"], 
-                            "targets": [f"{tgt_node}:{target_port_id}"]
+                            "sources": [src_elk_port], 
+                            "targets": [tgt_elk_port]
                         })
             if conn["is_inter_sheet"] and conn["hpin_id"]:
-                src_node = port_to_node.get(sip[0])
-                if src_node:
+                src_elk_port = port_to_elk_id.get(sip[0])
+                tgt_elk_port = port_to_elk_id.get(conn["hpin_id"])
+                if src_elk_port and tgt_elk_port:
                     edges.append({
                         "id": f"e_to_hpin_{conn['trace_id']}", 
-                        "sources": [f"{src_node}:{sip[0]}"], 
-                        "targets": [conn["hpin_id"]]
+                        "sources": [src_elk_port], 
+                        "targets": [tgt_elk_port]
                     })
             
         options = {
@@ -437,6 +465,14 @@ class AutoLayoutEngine:
             if cid.startswith("fixed_"): continue
             nx, ny = snap(node["x"]), snap(node["y"])
             
+            if cid.startswith("label_node_"):
+                lbl_id = cid.replace("label_node_", "")
+                lbl = next((e for e in generated if get_element_id(e) == lbl_id), None)
+                if lbl:
+                    lw, lh = snap(node.get("width", 0)), snap(node.get("height", 0))
+                    lbl.center = Point(x=snap(nx + lw / 2), y=snap(ny + lh / 2))
+                continue
+
             if cid.startswith("box_"):
                 inner = next((c for c in node.get("children", []) if c["id"].startswith("inner_body_")), None)
                 if inner:
@@ -449,13 +485,15 @@ class AutoLayoutEngine:
                     file_off = Point(x=snap(file_node["x"] - inner["x"]), y=snap(file_node["y"] - inner["y"])) if file_node else Point(x=0, y=bh + 20)
                     results.append(SchematicBox(schematic_box_id=cid, sheet_id=sheet_id, x=bx, y=by, width=bw, height=bh, is_hierarchical_sheet=True, name_offset=name_off, file_offset=file_off))
                     for p in inner.get("ports", []):
-                        hp = next((e for e in generated if isinstance(e, SchematicHierarchicalPin) and e.schematic_hierarchical_pin_id == p["id"]), None)
+                        actual_id = p["id"].split(":", 1)[1] if ":" in p["id"] else p["id"]
+                        hp = next((e for e in generated if isinstance(e, SchematicHierarchicalPin) and e.schematic_hierarchical_pin_id == actual_id), None)
                         if hp: hp.center = Point(x=snap(bx + p["x"]), y=snap(by + p["y"]))
                 else:
                     bw, bh = snap(node["width"]), snap(node["height"])
                     results.append(SchematicBox(schematic_box_id=cid, sheet_id=sheet_id, x=nx, y=ny, width=bw, height=bh, is_hierarchical_sheet=True))
                     for p in node.get("ports", []):
-                        hp = next((e for e in generated if isinstance(e, SchematicHierarchicalPin) and e.schematic_hierarchical_pin_id == p["id"]), None)
+                        actual_id = p["id"].split(":", 1)[1] if ":" in p["id"] else p["id"]
+                        hp = next((e for e in generated if isinstance(e, SchematicHierarchicalPin) and e.schematic_hierarchical_pin_id == actual_id), None)
                         if hp: hp.center = Point(x=snap(nx + p["x"]), y=snap(ny + p["y"]))
                 continue
 
@@ -494,6 +532,10 @@ class AutoLayoutEngine:
         for lbl in [e for e in labels if isinstance(e, (SchematicHierarchicalLabel, SchematicNetLabel))]:
             if lbl.sheet_id != sheet_id: continue
             
+            # If already positioned by ELK (non-zero center), skip manual snapping
+            if lbl.center.x != 0 or lbl.center.y != 0:
+                continue
+
             if isinstance(lbl, SchematicNetLabel) and lbl.schematic_hierarchical_pin_id:
                 hpin = hpin_map.get(lbl.schematic_hierarchical_pin_id)
                 if hpin:
