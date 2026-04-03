@@ -90,7 +90,14 @@ class KiCadWriter:
 
         # 3. Component Instances
         for comp in sheet_components:
-            lines.extend(self._write_component(comp, source_components, lib_id_to_lib_name))
+            source = source_components.get(comp.source_component_id)
+            symbol = None
+            if source and source.symbol_id:
+                from circuitweaver.library.pinout import get_symbol_info
+                try:
+                    symbol = get_symbol_info(source.symbol_id)
+                except Exception: pass
+            lines.extend(self._write_component(comp, source_components, lib_id_to_lib_name, symbol))
 
         # 4. Traces & Junctions
         point_counts = defaultdict(int)
@@ -207,21 +214,58 @@ class KiCadWriter:
         prefix = " " * indent
         return "\n".join(prefix + line if line.strip() else line for line in sexp.split("\n"))
 
-    def _write_component(self, comp: SchematicComponent, sources: Dict[str, SourceComponent], lib_id_to_lib_name: Dict[str, str]) -> List[str]:
+    def _write_component(self, comp: SchematicComponent, sources: Dict[str, SourceComponent], lib_id_to_lib_name: Dict[str, str], symbol: Optional[SymbolInfo] = None) -> List[str]:
         source = sources.get(comp.source_component_id)
         lib_id = self._resolve_lib_id(comp, source)
         lib_name = lib_id_to_lib_name.get(lib_id, lib_id)
         ref = source.name if source else "U?"
         val = source.display_value if source and source.display_value else (source.symbol_id if source else "")
         x = self._grid_to_mm(comp.center.x); y = self._grid_to_mm(comp.center.y)
+        ref_y = self._grid_to_mm(comp.center.y - 20)
+        val_y = self._grid_to_mm(comp.center.y + 20)
+        
         lines = [
-            f'  (symbol (lib_name "{lib_name}") (lib_id "{lib_id}") (at {x} {y} {comp.rotation}) (unit 1) (uuid "{self._new_uuid()}")',
-            f'    (property "Reference" "{ref}" (at {x} {self._grid_to_mm(comp.center.y - 20)} 0) (effects (font (size 1.27 1.27))))',
-            f'    (property "Value" "{val}" (at {x} {self._grid_to_mm(comp.center.y + 20)} 0) (effects (font (size 1.27 1.27))))'
+            "\t(symbol",
+            f'\t\t(lib_name "{lib_name}")',
+            f'\t\t(lib_id "{lib_id}")',
+            f"\t\t(at {x} {y} {comp.rotation})",
+            "\t\t(unit 1)",
+            "\t\t(body_style 1)",
+            "\t\t(exclude_from_sim no)",
+            "\t\t(in_bom yes)",
+            "\t\t(on_board yes)",
+            "\t\t(in_pos_files yes)",
+            "\t\t(dnp no)",
+            "\t\t(fields_autoplaced yes)",
+            f'\t\t(uuid "{self._new_uuid()}")',
+            f'\t\t(property "Reference" "{ref}"',
+            f"\t\t\t(at {x} {ref_y} 0)",
+            "\t\t\t(show_name no)",
+            "\t\t\t(do_not_autoplace no)",
+            "\t\t\t(effects (font (size 1.27 1.27)) (justify left))",
+            "\t\t)",
+            f'\t\t(property "Value" "{val}"',
+            f"\t\t\t(at {x} {val_y} 0)",
+            "\t\t\t(show_name no)",
+            "\t\t\t(do_not_autoplace no)",
+            "\t\t\t(effects (font (size 1.27 1.27)) (justify left))",
+            "\t\t)"
         ]
+        
         if source and source.footprint:
-            lines.append(f'    (property "Footprint" "{source.footprint}" (at {x} {y} 0) (hide yes) (effects (font (size 1.27 1.27))))')
-        lines.append("  )")
+            lines.append(f'\t\t(property "Footprint" "{source.footprint}"')
+            lines.append(f"\t\t\t(at {x} {y} 0)")
+            lines.append("\t\t\t(hide yes)")
+            lines.append("\t\t\t(show_name no)")
+            lines.append("\t\t\t(do_not_autoplace no)")
+            lines.append("\t\t\t(effects (font (size 1.27 1.27)) (justify right))")
+            lines.append("\t\t)")
+        
+        if symbol:
+            for pin in symbol.pins:
+                lines.append(f'\t\t(pin "{pin.number}" (uuid "{self._new_uuid()}"))')
+        
+        lines.append("\t)")
         return lines
 
     def _write_trace(self, trace: SchematicTrace) -> List[str]:
