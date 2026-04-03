@@ -118,15 +118,27 @@ class AutoLayoutEngine:
                         sheet_id, layout_data, sheet_source_comps, source_ports, 
                         sheet_source_groups, child_sheet_groups, connectivity_elements, unique_symbols
                     )
-                    all_positioned_elements.extend(sheet_results)
-                    for e in sheet_results:
-                        if isinstance(e, SchematicComponent): 
-                            comp_origins[e.source_component_id] = e.center
-                except Exception as e:
-                    logger.error(f"Layout failed for {sheet_id}: {e}")
 
-        # 5. Snap Labels to Pins
-        self._snap_labels(connectivity_elements, comp_origins, source_ports, unique_symbols, source_components, all_positioned_elements)
+                    # Validation: Check if all components were placed
+                    placed_comp_ids = {e.source_component_id for e in sheet_results if isinstance(e, SchematicComponent)}
+                    missing_comps = [c.source_component_id for c in sheet_source_comps if c.source_component_id not in placed_comp_ids]
+                    if missing_comps:
+                        raise RuntimeError(f"Sheet {sheet_id}: Components failed to be placed by layout engine: {missing_comps}")
+
+                    sheet_origins = {}
+                    for e in sheet_results:
+                        if isinstance(e, SchematicComponent):
+                            sheet_origins[e.source_component_id] = e.center
+                            comp_origins[e.source_component_id] = e.center
+
+                    # Snap labels for THIS sheet specifically
+                    sheet_labels = [e for e in connectivity_elements if e.sheet_id == sheet_id]
+                    self._snap_labels(sheet_labels, sheet_origins, source_ports, unique_symbols, source_components, sheet_results, sheet_id)
+
+                    all_positioned_elements.extend(sheet_results)
+                except Exception as e:
+                    if isinstance(e, RuntimeError): raise e
+                    raise RuntimeError(f"Layout failed for {sheet_id}: {e}")
 
         return elements + all_positioned_elements + connectivity_elements
 
@@ -167,9 +179,12 @@ class AutoLayoutEngine:
             involved_sheets = {element_to_sheet.get(p.source_component_id, "root") for p in involved_ports}
             net_id = trace.connected_source_net_ids[0] if trace.connected_source_net_ids else "logic"
             net_name = net_map[net_id].name if trace.connected_source_net_ids else f"NET_{trace.source_trace_id}"
+            sheet_to_hpin_id = {}
             
-            if len(involved_sheets) > 1:
-                sheet_to_hpin_id = {}
+            # Global nets (GND, 5V, etc.) should NEVER be hierarchical
+            is_global = any(global_name in net_name.upper() for global_name in ["GND", "5V", "3V3"])
+
+            if len(involved_sheets) > 1 and not is_global:
                 for sid in involved_sheets:
                     if sid == "root": continue
                     hpin_id = f"hpin_{trace.source_trace_id}_{sid}"
@@ -190,10 +205,10 @@ class AutoLayoutEngine:
 
                 for p in involved_ports:
                     sid = element_to_sheet.get(p.source_component_id, "root")
-                    if sid == "root":
+                    if sid == "root" or is_global:
                         generated.append(SchematicNetLabel(
                             schematic_net_label_id=f"nlabel_{trace.source_trace_id}_{p.source_port_id}",
-                            sheet_id="root", source_net_id=net_id,
+                            sheet_id=sid, source_net_id=net_id,
                             source_port_id=p.source_port_id, center=Point(x=0, y=0), text=net_name
                         ))
                     else:
@@ -207,8 +222,10 @@ class AutoLayoutEngine:
                 ports_in_sheet = [p for p in involved_ports if element_to_sheet.get(p.source_component_id) == sid]
                 involved_groups = {element_to_group.get(p.source_component_id, "root") for p in ports_in_sheet}
                 
-                is_labeled = len(involved_groups) > 1
-                if is_labeled and len(involved_sheets) == 1:
+                is_global = any(global_name in net_name.upper() for global_name in ["GND", "5V", "3V3"])
+                is_labeled = (len(involved_groups) > 1) or is_global
+                
+                if is_global or (is_labeled and len(involved_sheets) == 1):
                     for p in ports_in_sheet:
                         generated.append(SchematicNetLabel(
                             schematic_net_label_id=f"nlabel_{trace.source_trace_id}_{p.source_port_id}",
@@ -230,12 +247,11 @@ class AutoLayoutEngine:
     def _build_sheet_elk_graph(self, sheet_id, components, subgroups, child_sheets, all_ports, connectivity, generated, symbol_map):
         nodes = []
         
-        # 2. Components as Hierarchical Containers (Body + Labels)
+        # 1. Components
         for item in components:
             symbol = symbol_map.get(item.symbol_id)
             body_w, body_h = (symbol.width, symbol.height) if symbol else (40, 40)
             
-            # Ports go on the body node
             ports = []
             for p in [p for p in all_ports if p.source_component_id == item.source_component_id]:
                 pi = None
@@ -244,8 +260,6 @@ class AutoLayoutEngine:
                 side = {"left": "EAST", "right": "WEST", "up": "SOUTH", "down": "NORTH"}.get(pi.direction if pi else "right", "WEST")
                 ports.append({"id": p.source_port_id, "x": px, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": side}})
             
-            # ONLY use hierarchical containers for ROOT sheet or if strictly necessary
-            # Sub-sheets should stay FLAT to ensure ELK doesn't crash on simple layered logic
             if sheet_id != "root":
                 nodes.append({
                     "id": item.source_component_id, 
@@ -255,7 +269,7 @@ class AutoLayoutEngine:
                 })
                 continue
 
-            # Find labels connected to this component in this sheet
+            # Root Sheet: Components in containers for labels
             comp_labels = [
                 lbl for lbl in generated 
                 if isinstance(lbl, (SchematicNetLabel, SchematicHierarchicalLabel)) 
@@ -272,20 +286,14 @@ class AutoLayoutEngine:
             }
 
             if not comp_labels:
-                # No labels? Just add the body directly (backward compatible id for traces)
                 body_node["id"] = item.source_component_id
                 nodes.append(body_node)
             else:
-                # Wrap body and labels in a container
                 children = [body_node]
                 inner_edges = []
                 for lbl in comp_labels:
-                    # Representative node for label text
                     lbl_node_id = f"label_node_{get_element_id(lbl)}"
-                    lw = len(lbl.text) * 8 + 20
-                    children.append({"id": lbl_node_id, "width": lw, "height": 20})
-                    
-                    # Connect label to its port to keep it nearby
+                    children.append({"id": lbl_node_id, "width": len(lbl.text) * 8 + 20, "height": 20})
                     inner_edges.append({
                         "id": f"edge_{lbl_node_id}",
                         "sources": [f"body_{item.source_component_id}:{lbl.source_port_id}"],
@@ -303,52 +311,34 @@ class AutoLayoutEngine:
                     }
                 })
         
-        # 3. Sheet Boxes as Hierarchical Containers (Name + Body + File)
+        # 2. Sheet Boxes
         for cs in child_sheets:
             bid = f"box_{cs.source_group_id}"
             pins = [e for e in generated if isinstance(e, SchematicHierarchicalPin) and e.schematic_box_id == bid]
             
-            # Distribute pins: WEST for most, EAST for others
             west_pins = [p for i, p in enumerate(pins) if i < (len(pins) + 1) // 2]
             east_pins = [p for i, p in enumerate(pins) if i >= (len(pins) + 1) // 2]
             
-            # Calculate width based on BOTH sides to prevent internal label overlap
             max_w_west = max((len(p.text) for p in west_pins), default=0)
             max_w_east = max((len(p.text) for p in east_pins), default=0)
-            
-            # 10 units per char + margins
             inner_bw = max(250, (max_w_west + max_w_east) * 10 + 120)
             inner_bh = max(100, max(len(west_pins), len(east_pins)) * 30 + 50)
             
             inner_ports = []
-            # Place WEST pins
             for i, p in enumerate(west_pins):
                 py = (i + 1) * (inner_bh // (len(west_pins) + 1))
-                inner_ports.append({
-                    "id": p.schematic_hierarchical_pin_id, "x": 0, "y": py,
-                    "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "WEST"}
-                })
-            # Place EAST pins
+                inner_ports.append({"id": p.schematic_hierarchical_pin_id, "x": 0, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "WEST"}})
             for i, p in enumerate(east_pins):
                 py = (i + 1) * (inner_bh // (len(east_pins) + 1))
-                inner_ports.append({
-                    "id": p.schematic_hierarchical_pin_id, "x": inner_bw, "y": py,
-                    "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "EAST"}
-                })
+                inner_ports.append({"id": p.schematic_hierarchical_pin_id, "x": inner_bw, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "EAST"}})
             
             if sheet_id != "root":
-                nodes.append({
-                    "id": bid, 
-                    "width": inner_bw, "height": inner_bh, 
-                    "ports": inner_ports, 
-                    "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}
-                })
+                nodes.append({"id": bid, "width": inner_bw, "height": inner_bh, "ports": inner_ports, "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}})
                 continue
 
             body_id = f"inner_body_{bid}"
             name_id = f"text_name_{bid}"
             file_id = f"text_file_{bid}"
-            
             name_text = cs.name or cs.source_group_id
             file_text = f"File: {cs.source_group_id.replace('box_', '')}.kicad_sch"
 
@@ -371,7 +361,7 @@ class AutoLayoutEngine:
                 }
             })
         
-        # 4. Global Edges
+        # 3. Global Edges
         edges = []
         for conn in connectivity:
             sip = conn["ports"]
@@ -403,41 +393,32 @@ class AutoLayoutEngine:
         for node in data.get("children", []):
             cid = node["id"]
             if cid.startswith("fixed_"): continue
-            
             nx, ny = snap(node["x"]), snap(node["y"])
             
-            # Handle Hierarchical Sheet Boxes (look for inner body)
             if cid.startswith("box_"):
                 inner = next((c for c in node.get("children", []) if c["id"].startswith("inner_body_")), None)
                 if inner:
-                    # Final box position is parent (nx, ny) + offset of inner body
                     bx = snap(nx + inner["x"])
                     by = snap(ny + inner["y"])
                     bw, bh = snap(inner["width"]), snap(inner["height"])
-                    
-                    # Extract text offsets
                     name_node = next((c for c in node.get("children", []) if c["id"].startswith("text_name_")), None)
                     file_node = next((c for c in node.get("children", []) if c["id"].startswith("text_file_")), None)
-                    
-                    # Calculate offsets relative to box top-left
                     name_off = Point(x=snap(name_node["x"] - inner["x"]), y=snap(name_node["y"] - inner["y"])) if name_node else Point(x=0, y=-20)
                     file_off = Point(x=snap(file_node["x"] - inner["x"]), y=snap(file_node["y"] - inner["y"])) if file_node else Point(x=0, y=bh + 20)
-                    
-                    results.append(SchematicBox(
-                        schematic_box_id=cid, sheet_id=sheet_id, 
-                        x=bx, y=by, width=bw, height=bh, 
-                        is_hierarchical_sheet=True,
-                        name_offset=name_off, file_offset=file_off
-                    ))
+                    results.append(SchematicBox(schematic_box_id=cid, sheet_id=sheet_id, x=bx, y=by, width=bw, height=bh, is_hierarchical_sheet=True, name_offset=name_off, file_offset=file_off))
                     for p in inner.get("ports", []):
                         hp = next((e for e in generated if isinstance(e, SchematicHierarchicalPin) and e.schematic_hierarchical_pin_id == p["id"]), None)
                         if hp: hp.center = Point(x=snap(bx + p["x"]), y=snap(by + p["y"]))
+                else:
+                    bw, bh = snap(node["width"]), snap(node["height"])
+                    results.append(SchematicBox(schematic_box_id=cid, sheet_id=sheet_id, x=nx, y=ny, width=bw, height=bh, is_hierarchical_sheet=True))
+                    for p in node.get("ports", []):
+                        hp = next((e for e in generated if isinstance(e, SchematicHierarchicalPin) and e.schematic_hierarchical_pin_id == p["id"]), None)
+                        if hp: hp.center = Point(x=snap(nx + p["x"]), y=snap(ny + p["y"]))
                 continue
 
-            # Handle Components (might be direct or in a container)
             comp_id = cid
             comp_node = node
-            # If it's a container, find the inner body node
             body = next((c for c in node.get("children", []) if c["id"].startswith("body_")), None)
             if body:
                 comp_node = body
@@ -460,29 +441,25 @@ class AutoLayoutEngine:
                 if el: results.append(SchematicTrace(schematic_trace_id=f"sch_{edge['id']}", sheet_id=sheet_id, edges=el))
         return results
 
-    def _snap_labels(self, generated, comp_origins, source_ports, symbols, source_components, all_positioned):
-        """Final Pass: Match EVERY label to the EXACT pin coordinate."""
+    def _snap_labels(self, labels, comp_origins, source_ports, symbols, source_components, all_positioned, sheet_id):
+        """Final Pass: Match EVERY label to the EXACT pin coordinate for a specific sheet."""
         port_to_parent = {p.source_port_id: p for p in source_ports}
         comp_map = {c.source_component_id: c for c in source_components}
-        hpin_map = {e.schematic_hierarchical_pin_id: e for e in generated if isinstance(e, SchematicHierarchicalPin)}
+        hpin_map = {e.schematic_hierarchical_pin_id: e for e in labels if isinstance(e, SchematicHierarchicalPin)}
+        hpin_map.update({e.schematic_hierarchical_pin_id: e for e in all_positioned if isinstance(e, SchematicHierarchicalPin)})
         box_map = {e.schematic_box_id: e for e in all_positioned if isinstance(e, SchematicBox)}
         
-        for lbl in [e for e in generated if isinstance(e, (SchematicHierarchicalLabel, SchematicNetLabel))]:
-            # Case 1: Snapping to a hierarchical pin on a box (parent sheet side)
+        for lbl in [e for e in labels if isinstance(e, (SchematicHierarchicalLabel, SchematicNetLabel))]:
+            if lbl.sheet_id != sheet_id: continue
+            
             if isinstance(lbl, SchematicNetLabel) and lbl.schematic_hierarchical_pin_id:
                 hpin = hpin_map.get(lbl.schematic_hierarchical_pin_id)
                 if hpin:
                     lbl.center = hpin.center
-                    # If pin is on the left side of the box, justify RIGHT
                     box = box_map.get(hpin.schematic_box_id)
-                    if box:
-                        if round(hpin.center.x) <= round(box.x):
-                            lbl.anchor_side = "right"
-                        else:
-                            lbl.anchor_side = "left"
+                    if box: lbl.anchor_side = "right" if round(hpin.center.x) <= round(box.x) else "left"
                 continue
 
-            # Case 2: Snapping to a component pin
             if not lbl.source_port_id: continue
             port = port_to_parent.get(lbl.source_port_id)
             if not port: continue
@@ -493,10 +470,17 @@ class AutoLayoutEngine:
             symbol = symbols.get(comp.symbol_id)
             if not symbol: continue
             
-            pi = next((pin for pin in symbol.pins if pin.number == str(port.pin_number)), None) or \
-                 next((pin for pin in symbol.pins if pin.name == port.name), None)
+            pi = None
+            pnum = str(port.pin_number) if port.pin_number is not None else None
+            if not pnum and "-" in port.source_port_id: pnum = port.source_port_id.split("-")[-1]
+            if pnum: pi = next((pin for pin in symbol.pins if pin.number == pnum), None)
+            if not pi and port.name: pi = next((pin for pin in symbol.pins if pin.name == port.name), None)
             
             if pi:
                 lbl.center = Point(x=origin.x + pi.grid_offset.x, y=origin.y + pi.grid_offset.y)
-                # Justify to flow AWAY from body
-                lbl.anchor_side = {"left": "right", "right": "left", "up": "bottom", "down": "top"}.get(pi.direction, "left")
+                dx, dy = pi.grid_offset.x, pi.grid_offset.y
+                if abs(dx) > abs(dy): side = "right" if dx > 0 else "left"
+                else: side = "bottom" if dy > 0 else "top"
+                lbl.anchor_side = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}.get(side, "left")
+            else:
+                raise RuntimeError(f"Sheet {sheet_id}: Label {lbl.text} failed to find pin {pnum or port.name} on component {comp.source_component_id} ({comp.symbol_id})")

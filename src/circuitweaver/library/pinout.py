@@ -76,6 +76,14 @@ def get_symbol_info(symbol_id: str) -> SymbolInfo:
         raise ValueError(f"Symbol '{sym_name}' not found in library '{lib_name}'")
 
     symbol_content = _extract_balanced_sexp(content, symbol_start)
+    
+    # Check for extension: (extends "BASE_NAME")
+    extends_match = re.search(r'\(extends\s+"([^"]+)"', symbol_content)
+    if extends_match:
+        base_name = extends_match.group(1)
+        # Recursively get info for the base symbol
+        return get_symbol_info(f"{lib_name}:{base_name}")
+
     pins = _extract_pins(symbol_content)
 
     if not pins:
@@ -126,27 +134,50 @@ def _extract_balanced_sexp(content: str, start_pos: int) -> str:
 
 def _extract_pins(symbol_content: str) -> list[PinInfo]:
     pins: list[PinInfo] = []
+    # Match (pin ELECTRICAL_TYPE GRAPHIC_TYPE (at X Y ANGLE) ... (name "NAME" ...) (number "NUMBER" ...))
+    # Note: ELECTRICAL_TYPE can be quoted or unquoted.
     pin_pattern = re.compile(r'\(pin\s+([^\s\)]+)\s+([^\s\)]+)', re.DOTALL)
+    
+    # Iterate through the content to find ALL pins, including those in nested (symbol ...) blocks
     pos = 0
     while True:
         match = pin_pattern.search(symbol_content, pos)
-        if not match: break
+        if not match:
+            break
+        
         start_idx = match.start()
+        # Extract the full pin block to find name/number within it
         pin_block = _extract_balanced_sexp(symbol_content, start_idx)
         pos = start_idx + len(pin_block)
-        electrical_type = match.group(1)
+        
+        electrical_type = match.group(1).strip('"')
+        
         at_match = re.search(r'\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)', pin_block)
-        if not at_match: continue
-        x_mm, y_mm, angle = float(at_match.group(1)), float(at_match.group(2)), float(at_match.group(3))
+        if not at_match:
+            continue
+            
+        x_mm = float(at_match.group(1))
+        y_mm = float(at_match.group(2))
+        angle = float(at_match.group(3))
+        
         name_match = re.search(r'\(name\s+"([^"]*)"', pin_block)
-        name = name_match.group(1) if name_match else "~"
+        name = name_match.group(1) if name_match else ""
+        
         num_match = re.search(r'\(number\s+"([^"]*)"', pin_block)
-        number = num_match.group(1) if num_match else "?"
-        grid_x, grid_y = round(x_mm / 0.127), round(-y_mm / 0.127)
+        number = num_match.group(1) if num_match else ""
+        
+        # Convert KiCad mm to our grid units (1 grid = 0.127mm)
+        grid_x = int(round(x_mm / 0.127))
+        grid_y = int(round(y_mm / 0.127))
+        
         pins.append(PinInfo(
-            number=number, name=name, grid_offset=GridOffset(grid_x, grid_y),
-            direction=_angle_to_direction(angle), electrical_type=electrical_type
+            number=number,
+            name=name,
+            grid_offset=GridOffset(grid_x, grid_y),
+            direction=_angle_to_direction(angle),
+            electrical_type=electrical_type
         ))
+        
     return pins
 
 
