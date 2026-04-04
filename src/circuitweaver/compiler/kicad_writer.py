@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 GRID_TO_MM = Decimal('0.127')
 
 
+class RawString:
+    """A wrapper for strings that should not be quoted or escaped."""
+
+    def __init__(self, value: str):
+        self.value = value
+
+
 class SExp:
     """A lightweight S-Expression builder."""
 
@@ -59,6 +66,8 @@ class SExp:
     def _format_value(self, val: Any) -> str:
         if val is None:
             return ""
+        if isinstance(val, RawString):
+            return val.value
         if isinstance(val, bool):
             return "yes" if val else "no"
         if isinstance(val, (int, float, Decimal)):
@@ -118,11 +127,7 @@ class KiCadWriter:
                 sheet_components, source_components
             )
             for symbol_def in symbols_needed:
-                # symbol_def is already a string, we inject it manually in serialize or handle it here
-                # For simplicity, we can store it as a special type or just a string that SExp knows not to quote
-                # But our _format_value quotes everything with spaces. 
-                # Let's add a RawSExp or handle strings starting with '(' as raw for now.
-                lib_symbols.args.append(symbol_def)
+                lib_symbols.args.append(RawString(symbol_def))
         else:
             lib_id_to_lib_name = {}
         sch.args.append(lib_symbols)
@@ -187,24 +192,7 @@ class KiCadWriter:
         sch.args.append(SExp("sheet_instances", SExp("path", "/", SExp("page", "1"))))
         sch.args.append(SExp("embedded_fonts", False))
 
-        # We need to handle the raw symbol strings in serialize.
-        # Let's override serialize slightly or adjust SExp.
-        return self._serialize_sch(sch)
-
-    def _serialize_sch(self, sch: SExp) -> str:
-        # A simple hack: SExp._format_value normally quotes. 
-        # We want to avoid quoting the symbol_def strings which start with whitespace and '('
-        original_format = SExp._format_value
-        def custom_format(self_obj, val):
-            if isinstance(val, str) and val.strip().startswith("("):
-                return val # Return as-is
-            return original_format(self_obj, val)
-        
-        SExp._format_value = custom_format
-        try:
-            return sch.serialize()
-        finally:
-            SExp._format_value = original_format
+        return sch.serialize()
 
     def _write_no_connect(self, nc: SchematicNoConnect) -> Optional[SExp]:
         if not nc.position: return None
@@ -334,10 +322,14 @@ class KiCadWriter:
             SExp("uuid", self._new_uuid()),
             SExp("property", "Reference", ref, 
                 SExp("at", x, ref_y, 0),
+                SExp("show_name", False),
+                SExp("do_not_autoplace", False),
                 SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", "left"))
             ),
             SExp("property", "Value", val,
                 SExp("at", x, val_y, 0),
+                SExp("show_name", False),
+                SExp("do_not_autoplace", False),
                 SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", "left"))
             )
         )
