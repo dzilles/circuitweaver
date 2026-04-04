@@ -354,7 +354,7 @@ class AutoLayoutEngine:
             for lbl in [l for l in sheet_labels if l.source_port_id in comp_port_ids]:
                 lbl_id = get_element_id(lbl)
                 lbl_node_id = f"label_node_{lbl_id}"
-                nodes.append({"id": lbl_node_id, "width": len(lbl.text) * 10 + 40, "height": 30})
+                nodes.append({"id": lbl_node_id, "width": len(lbl.text) * 7, "height": 10})
                 edges.append({
                     "id": f"e_label_{lbl_id}",
                     "sources": [f"{item.source_component_id}:{lbl.source_port_id}"],
@@ -373,17 +373,17 @@ class AutoLayoutEngine:
             max_w_west = max((len(p.text) for p in west_pins), default=0)
             max_w_east = max((len(p.text) for p in east_pins), default=0)
             inner_bw = max(250, (max_w_west + max_w_east) * 10 + 120)
-            # Use 100 units (10 grid points) spacing for pins to avoid overlap
-            inner_bh = max(100, max(len(west_pins), len(east_pins)) * 100 + 50)
+            # Use 20 units (2 grid points = 100 mils) spacing for pins for standard look
+            inner_bh = max(100, max(len(west_pins), len(east_pins)) * 20 + 50)
             
             inner_ports = []
             for i, p in enumerate(west_pins):
-                py = (i + 1) * 100
+                py = (i + 1) * 20
                 # Unique port ID for boxes too
                 elk_port_id = f"{bid}:{p.schematic_hierarchical_pin_id}"
                 inner_ports.append({"id": elk_port_id, "x": 0, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "WEST"}})
             for i, p in enumerate(east_pins):
-                py = (i + 1) * 100
+                py = (i + 1) * 20
                 elk_port_id = f"{bid}:{p.schematic_hierarchical_pin_id}"
                 inner_ports.append({"id": elk_port_id, "x": inner_bw, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "EAST"}})
             
@@ -420,7 +420,7 @@ class AutoLayoutEngine:
             for lbl in [l for l in sheet_labels if l.schematic_hierarchical_pin_id in box_hpin_ids]:
                 lbl_id = get_element_id(lbl)
                 lbl_node_id = f"label_node_{lbl_id}"
-                nodes.append({"id": lbl_node_id, "width": len(lbl.text) * 10 + 40, "height": 30})
+                nodes.append({"id": lbl_node_id, "width": len(lbl.text) * 7, "height": 10})
                 edges.append({
                     "id": f"e_label_{lbl_id}",
                     "sources": [f"{bid}:{lbl.schematic_hierarchical_pin_id}"],
@@ -464,13 +464,15 @@ class AutoLayoutEngine:
             
         options = {
             "org.eclipse.elk.algorithm": "layered",
-            "org.eclipse.elk.spacing.nodeNode": "150" if sheet_id != "root" else "300",
-            "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": "250",
+            "org.eclipse.elk.spacing.nodeNode": "10" if sheet_id != "root" else "100",
+            "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": "40" if sheet_id != "root" else "150",
+            "org.eclipse.elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+            "org.eclipse.elk.aspectRatio": "1.414",
         }
         if sheet_id == "root":
-            options["org.eclipse.elk.layered.nodePlacement.strategy"] = "BRANDES_KOEPF"
-            options["org.eclipse.elk.aspectRatio"] = "1.414"
             options["org.eclipse.elk.padding"] = f"[top=200,left=200,bottom={TB_HEIGHT + 200},right={TB_WIDTH + 200}]"
+        else:
+            options["org.eclipse.elk.padding"] = "[top=50,left=50,bottom=50,right=50]"
             
         return {"id": sheet_id, "children": nodes, "ports": [], "edges": edges, "layoutOptions": options}
 
