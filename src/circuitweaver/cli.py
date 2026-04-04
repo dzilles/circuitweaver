@@ -96,7 +96,34 @@ def compile(file_path: str, output_dir: str, name: str):
             console=console,
         ) as progress:
             progress.add_task(description="Running layout and writing KiCad files...", total=None)
-            sch_file = compiler.compile(elements, out_path, project_name=name)
+            
+            # 1. Run Layout
+            layout_elements = compiler.layout_engine.layout(elements)
+            
+            # 2. Validate Layout (check for dangling labels, etc.)
+            from circuitweaver.validator.engine import _build_validation_context, VALIDATION_RULES
+            
+            context = _build_validation_context(layout_elements)
+            layout_valid = True
+            for rule_class in VALIDATION_RULES:
+                rule = rule_class()
+                rule_result = rule.validate(layout_elements, context)
+                if not rule_result.is_valid:
+                    layout_valid = False
+                    error_console.print(f"\n[bold red]Layout Validation ERROR (Rule: {rule.name}):[/bold red]")
+                    for error in rule_result.errors:
+                        error_console.print(f"  - {error}")
+                if rule_result.warnings:
+                    error_console.print(f"\n[bold yellow]Layout Validation Warning (Rule: {rule.name}):[/bold yellow]")
+                    for warning in rule_result.warnings:
+                        error_console.print(f"  - {warning}")
+            
+            if not layout_valid:
+                error_console.print("\n[bold red]Compilation aborted due to layout validation errors.[/bold red]")
+                sys.exit(1)
+
+            # 3. Write Files
+            sch_file = compiler.compile(layout_elements, out_path, project_name=name)
 
         console.print(f"\n[bold green]SUCCESS:[/bold green] Compiled to [cyan]{sch_file}[/cyan]")
 
