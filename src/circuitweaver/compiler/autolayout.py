@@ -191,115 +191,93 @@ class AutoLayoutEngine:
         sheet_connectivity = defaultdict(list)
         port_map = {p.source_port_id: p for p in ports}
         net_map = {n.source_net_id: n for n in nets}
-        
+
+        # Group everything by logical net
+        # (net_id, net_name) -> list of ports
+        nets_to_ports = defaultdict(list)
         for trace in traces:
             involved_ports = [port_map[pid] for pid in trace.connected_source_port_ids if pid in port_map]
             if not involved_ports: continue
-            
-            involved_sheets = {element_to_sheet.get(p.source_component_id, "root") for p in involved_ports}
+
             net_id = trace.connected_source_net_ids[0] if trace.connected_source_net_ids else trace.source_trace_id
             net_name = net_map[net_id].name if (trace.connected_source_net_ids and net_id in net_map) else f"NET_{trace.source_trace_id}"
-            sheet_to_hpin_id = {}
-            
+
+            nets_to_ports[(net_id, net_name)].extend(involved_ports)
+
+            # Record local connectivity for layout engine
+            for sid in {element_to_sheet.get(p.source_component_id, "root") for p in involved_ports}:
+                ports_in_sheet = [p for p in involved_ports if element_to_sheet.get(p.source_component_id) == sid]
+                sheet_connectivity[sid].append({
+                    "trace_id": trace.source_trace_id, 
+                    "net_id": net_id,
+                    "ports": [p.source_port_id for p in ports_in_sheet],
+                    "is_inter_group": False, # Will refine below
+                    "is_inter_sheet": False, # Will refine below
+                    "hpin_id": None
+                })
+
+        for (net_id, net_name), involved_ports in nets_to_ports.items():
+            involved_sheets = {element_to_sheet.get(p.source_component_id, "root") for p in involved_ports}
+
             # Global nets (GND, 5V, etc.) should NEVER be hierarchical
             is_global = any(global_name in net_name.upper() for global_name in ["GND", "5V", "3V3"])
 
+            sheet_to_hpin_id = {}
             if len(involved_sheets) > 1 and not is_global:
-                # Find the 'least common ancestor' sheet for all involved components
-                # For simplicity, we bubble everything up to root if it spans multiple sheets
-                # and then back down to the target sheets.
-
-                # 1. Create pins on ALL involved sheets (except root)
                 for sid in involved_sheets:
                     if sid == "root": continue
-
-                    # Traverse UP from sid to root, adding pins to each parent
                     curr = sid
                     while curr != "root":
                         parent = element_to_sheet.get(curr, "root")
-                        hpin_id = f"hpin_{trace.source_trace_id}_{curr}"
-
-                        # Add pin to the parent sheet (representing the child 'curr')
+                        hpin_id = f"hpin_{net_id}_{curr}"
                         if not any(e.schematic_hierarchical_pin_id == hpin_id for e in generated if isinstance(e, SchematicHierarchicalPin)):
                             generated.append(SchematicHierarchicalPin(
                                 schematic_hierarchical_pin_id=hpin_id,
                                 sheet_id=parent, source_net_id=net_id,
                                 schematic_box_id=f"box_{curr}", center=Point(x=0, y=0), text=net_name
                             ))
-
-                            # Add a corresponding net label in the parent sheet to 'tap' into the pin
                             generated.append(SchematicNetLabel(
-                                schematic_net_label_id=f"nlabel_hpin_{trace.source_trace_id}_{curr}",
+                                schematic_net_label_id=f"nlabel_hpin_{net_id}_{curr}",
                                 sheet_id=parent, source_net_id=net_id,
                                 schematic_hierarchical_pin_id=hpin_id, center=Point(x=0, y=0), text=net_name
                             ))
-
-                            # Add a hierarchical label INSIDE the child sheet
-                            # We attach it to the first port in this sheet so ELK can position it
                             ports_in_curr = [p for p in involved_ports if element_to_sheet.get(p.source_component_id) == curr]
                             generated.append(SchematicHierarchicalLabel(
-                                schematic_hierarchical_label_id=f"hlabel_bound_{trace.source_trace_id}_{curr}",
+                                schematic_hierarchical_label_id=f"hlabel_bound_{net_id}_{curr}",
                                 sheet_id=curr, source_net_id=net_id,
                                 source_port_id=ports_in_curr[0].source_port_id if ports_in_curr else None,
                                 center=Point(x=0, y=0), text=net_name
                             ))
-
                         sheet_to_hpin_id[curr] = hpin_id
                         curr = parent
-                sheet_hlabel_created = {s: False for s in involved_sheets}
-                for p in involved_ports:
-                    sid = element_to_sheet.get(p.source_component_id, "root")
-                    if sid == "root" or is_global:
-                        generated.append(SchematicNetLabel(
-                            schematic_net_label_id=f"nlabel_{trace.source_trace_id}_{p.source_port_id}",
-                            sheet_id=sid, source_net_id=net_id,
-                            source_port_id=p.source_port_id, center=Point(x=0, y=0), text=net_name
-                        ))
-                    else:
-                        if not sheet_hlabel_created[sid]:
-                            generated.append(SchematicHierarchicalLabel(
-                                schematic_hierarchical_label_id=f"hlabel_{trace.source_trace_id}_{p.source_port_id}",
-                                sheet_id=sid, source_net_id=net_id,
-                                source_port_id=p.source_port_id, center=Point(x=0, y=0), text=net_name
-                            ))
-                            sheet_hlabel_created[sid] = True
-                        else:
-                            generated.append(SchematicNetLabel(
-                                schematic_net_label_id=f"nlabel_local_{trace.source_trace_id}_{p.source_port_id}",
-                                sheet_id=sid, source_net_id=net_id,
-                                source_port_id=p.source_port_id, center=Point(x=0, y=0), text=net_name
-                            ))
 
+            # Now mark labeling requirements per sheet
             for sid in involved_sheets:
                 ports_in_sheet = [p for p in involved_ports if element_to_sheet.get(p.source_component_id) == sid]
                 involved_groups = {element_to_group.get(p.source_component_id, "root") for p in ports_in_sheet}
-                
-                is_global = any(global_name in net_name.upper() for global_name in ["GND", "5V", "3V3"])
-                # Labeled if global OR spans multiple groups on THIS sheet
+
                 is_labeled = (len(involved_groups) > 1) or is_global
-                
-                # If labeled, we must ensure EVERY port in this sheet has a label if it's not already handled
+
+                # Update sheet_connectivity metadata
+                for conn in sheet_connectivity[sid]:
+                    if conn["net_id"] == net_id:
+                        conn["is_inter_group"] = is_labeled
+                        conn["is_inter_sheet"] = len(involved_sheets) > 1
+                        conn["hpin_id"] = sheet_to_hpin_id.get(sid)
+
+                # Add net labels if required
                 if is_labeled:
                     for p in ports_in_sheet:
-                        lbl_id = f"nlabel_{trace.source_trace_id}_{p.source_port_id}"
-                        # Only add if not already added by hierarchical logic above
+                        lbl_id = f"nlabel_{net_id}_{p.source_port_id}"
                         if not any(get_element_id(e) == lbl_id for e in generated):
                             generated.append(SchematicNetLabel(
                                 schematic_net_label_id=lbl_id,
                                 sheet_id=sid, source_net_id=net_id,
                                 source_port_id=p.source_port_id, center=Point(x=0, y=0), text=net_name
                             ))
-                
-                sheet_connectivity[sid].append({
-                    "trace_id": trace.source_trace_id, 
-                    "net_id": net_id,
-                    "ports": [p.source_port_id for p in ports_in_sheet],
-                    "is_inter_group": is_labeled,
-                    "is_inter_sheet": len(involved_sheets) > 1,
-                    "hpin_id": sheet_to_hpin_id.get(sid) if len(involved_sheets) > 1 else None
-                })
-                
+
         return generated, sheet_connectivity
+
 
     def _build_sheet_elk_graph(self, sheet_id, components, subgroups, child_sheets, all_ports, connectivity, generated, symbol_map):
         nodes = []
