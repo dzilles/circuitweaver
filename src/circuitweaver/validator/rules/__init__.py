@@ -5,6 +5,7 @@ from circuitweaver.validator.rules.source_port_completeness import SourcePortCom
 from circuitweaver.validator.rules.source_refs import SourceReferencesRule
 from circuitweaver.validator.rules.trace_connections import TraceConnectionsRule
 from circuitweaver.validator.rules.unique_ids import UniqueIdsRule
+from circuitweaver.validator.rules.dangling_labels import DanglingLabelsRule
 
 __all__ = [
     "ValidationRule",
@@ -12,4 +13,5 @@ __all__ = [
     "SourceReferencesRule",
     "TraceConnectionsRule",
     "SourcePortCompletenessRule",
+    "DanglingLabelsRule",
 ]

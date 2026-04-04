@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, TypedDict
 
 from circuitweaver.library.pinout import get_symbol_info, SymbolInfo
 from circuitweaver.types.circuit_json import (
@@ -34,15 +34,45 @@ logger = logging.getLogger(__name__)
 # KiCad standard grid is 50mils (10 units in our system)
 KICAD_GRID_UNITS = 10
 
-# Title block exclusion area (approx bottom-right)
-TB_WIDTH = 1417
-TB_HEIGHT = 354
+
+class ElkSizingConfig:
+    CHAR_WIDTH_PX = 7
+    BOX_PADDING = 120
+    PIN_SPACING = 20
+    MIN_BOX_W = 250
+    MIN_BOX_H = 100
+    TB_WIDTH = 1417
+    TB_HEIGHT = 354
+    LABEL_HEIGHT = 10
+
+
+class ElkPort(TypedDict):
+    id: str
+    x: float
+    y: float
+    width: float
+    height: float
+    layoutOptions: Dict[str, str]
+
+
+class ElkNode(TypedDict, total=False):
+    id: str
+    width: float
+    height: float
+    ports: List[ElkPort]
+    children: List["ElkNode"]
+    edges: List[Dict[str, Any]]
+    layoutOptions: Dict[str, str]
 
 
 class AutoLayoutEngine:
     """Engine for generating hierarchical multi-sheet schematic layouts."""
 
     def __init__(self, helper_path: Optional[str] = None):
+        import shutil
+        if not shutil.which("node"):
+            raise RuntimeError("Node.js is required for schematic auto-layout but was not found.")
+
         if helper_path:
             self.helper_path = Path(helper_path)
         else:
@@ -98,6 +128,11 @@ class AutoLayoutEngine:
         comp_origins: Dict[str, Point] = {}
         all_positioned_elements: List[CircuitElement] = []
 
+        # O(1) Lookups for ports
+        ports_by_comp = defaultdict(list)
+        for p in source_ports:
+            ports_by_comp[p.source_component_id].append(p)
+
         for sheet_id in all_sheet_ids:
             sheet_source_comps = [c for c in source_components if element_to_sheet.get(c.source_component_id) == sheet_id]
             sheet_source_groups = [g for g in source_groups if element_to_sheet.get(g.source_group_id) == sheet_id and not g.is_subcircuit]
@@ -110,42 +145,42 @@ class AutoLayoutEngine:
             try:
                 elk_graph = self._build_sheet_elk_graph(
                     sheet_id, sheet_source_comps, sheet_source_groups, child_sheet_groups,
-                    source_ports, sheet_connectivity[sheet_id], connectivity_elements, unique_symbols
+                    ports_by_comp, sheet_connectivity[sheet_id], connectivity_elements, unique_symbols
                 )
 
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    tmp_path = Path(tmpdir)
-                    input_file = tmp_path / f"elk_{sheet_id}_in.json"
-                    output_file = tmp_path / f"elk_{sheet_id}_out.json"
-                    input_file.write_text(json.dumps(elk_graph))
-
-                    try:
-                        subprocess.run(["node", str(self.helper_path), str(input_file), str(output_file)], check=True, capture_output=True, text=True)
-                        if sheet_id == "root":
-                            Path("debug_elk_out_root.json").write_text(output_file.read_text())
-                    except subprocess.CalledProcessError as e:
-                        error_msg = e.stderr if e.stderr else e.stdout
-                        logger.error(f"ELK Layout failed for {sheet_id}: {error_msg}")
-                        raise RuntimeError(f"Layout failed for {sheet_id}: {error_msg}")
-
-                    layout_data = json.loads(output_file.read_text())
-                    
-                    sheet_results = self._parse_sheet_layout(
-                        sheet_id, layout_data, sheet_source_comps, source_ports, 
-                        sheet_source_groups, child_sheet_groups, connectivity_elements, unique_symbols
+                try:
+                    process = subprocess.run(
+                        ["node", str(self.helper_path)],
+                        input=json.dumps(elk_graph),
+                        capture_output=True,
+                        text=True,
+                        check=True
                     )
+                    layout_data = json.loads(process.stdout)
 
-                    # Validation: Check if all components were placed
-                    placed_comp_ids = {e.source_component_id for e in sheet_results if isinstance(e, SchematicComponent)}
-                    missing_comps = [c.source_component_id for c in sheet_source_comps if c.source_component_id not in placed_comp_ids]
-                    if missing_comps:
-                        raise RuntimeError(f"Sheet {sheet_id}: Components failed to be placed by layout engine: {missing_comps}")
+                    if sheet_id == "root":
+                        Path("debug_elk_out_root.json").write_text(process.stdout)
+                except subprocess.CalledProcessError as e:
+                    error_msg = e.stderr if e.stderr else e.stdout
+                    logger.error(f"ELK Layout failed for {sheet_id}: {error_msg}")
+                    raise RuntimeError(f"Layout failed for {sheet_id}: {error_msg}")
 
-                    for e in sheet_results:
-                        if isinstance(e, SchematicComponent):
-                            comp_origins[e.source_component_id] = e.center
+                sheet_results = self._parse_sheet_layout(
+                    sheet_id, layout_data, sheet_source_comps, ports_by_comp, 
+                    sheet_source_groups, child_sheet_groups, connectivity_elements, unique_symbols
+                )
 
-                    all_positioned_elements.extend(sheet_results)
+                # Validation: Check if all components were placed
+                placed_comp_ids = {e.source_component_id for e in sheet_results if isinstance(e, SchematicComponent)}
+                missing_comps = [c.source_component_id for c in sheet_source_comps if c.source_component_id not in placed_comp_ids]
+                if missing_comps:
+                    raise RuntimeError(f"Sheet {sheet_id}: Components failed to be placed by layout engine: {missing_comps}")
+
+                for e in sheet_results:
+                    if isinstance(e, SchematicComponent):
+                        comp_origins[e.source_component_id] = e.center
+
+                all_positioned_elements.extend(sheet_results)
             except Exception as e:
                 if isinstance(e, RuntimeError): raise e
                 raise RuntimeError(f"Layout failed for {sheet_id}: {e}")
@@ -209,8 +244,13 @@ class AutoLayoutEngine:
         for (net_id, net_name), involved_ports in nets_to_ports.items():
             involved_sheets = {element_to_sheet.get(p.source_component_id, "root") for p in involved_ports}
 
-            # Global nets (GND, 5V, etc.) should NEVER be hierarchical
-            is_global = any(global_name in net_name.upper() for global_name in ["GND", "5V", "3V3"])
+            # Phase 5: Use actual logical schema flags if available
+            net_obj = net_map.get(net_id)
+            if net_obj:
+                is_global = net_obj.is_power or net_obj.is_ground
+            else:
+                # Fallback to name matching for global nets (GND, 5V, etc.)
+                is_global = any(global_name in net_name.upper() for global_name in ["GND", "5V", "3V3"])
 
             sheet_to_hpin_id = {}
             if len(involved_sheets) > 1 and not is_global:
@@ -272,159 +312,136 @@ class AutoLayoutEngine:
         return generated, sheet_connectivity
 
 
-    def _build_sheet_elk_graph(self, sheet_id, components, subgroups, child_sheets, all_ports, connectivity, generated, symbol_map):
-        nodes = []
-        edges = []
+    def _build_sheet_elk_graph(self, sheet_id: str, components: List[SourceComponent], subgroups, child_sheets, ports_by_comp: Dict[str, List[SourcePort]], connectivity, generated, symbol_map: Dict[str, SymbolInfo]) -> ElkNode:
+        nodes: List[ElkNode] = []
+        edges: List[Dict[str, Any]] = []
         
-        # 1. Components
         sheet_labels = [e for e in generated if isinstance(e, (SchematicNetLabel, SchematicHierarchicalLabel)) and e.sheet_id == sheet_id]
         added_labels = set()
 
+        # 1. Components
         for item in components:
-            symbol = symbol_map.get(item.symbol_id)
-            if symbol:
-                body_w, body_h = symbol.width, symbol.height
-            else:
-                body_w, body_h = 40, 40
-            
-            # Ensure minimum size to avoid ELK issues
-            body_w = max(body_w, 10)
-            body_h = max(body_h, 10)
-            
-            ports = []
-            symbol_pins = {p.number: p for p in symbol.pins} if symbol else {}
-            comp_ports_info = [p for p in all_ports if p.source_component_id == item.source_component_id]
-            comp_port_ids = {p.source_port_id for p in comp_ports_info}
-            
-            for p in comp_ports_info:
-                pi = symbol_pins.get(str(p.pin_number)) or next((pin for pin in symbol_pins.values() if pin.name == p.name), None)
-                if pi:
-                    px, py = (pi.grid_offset.x - symbol.bounding_box_min.x, pi.grid_offset.y - symbol.bounding_box_min.y)
-                    side = {"left": "EAST", "right": "WEST", "up": "SOUTH", "down": "NORTH"}.get(pi.direction, "WEST")
-                else:
-                    px, py = 0, 0
-                    side = "WEST"
-                
-                elk_port_id = f"{item.source_component_id}:{p.source_port_id}"
-                
-                # Check for labels attached to this specific port
-                for lbl in [l for l in sheet_labels if l.source_port_id == p.source_port_id]:
-                    lbl_id = get_element_id(lbl)
-                    lbl_node_id = f"label_node_{lbl_id}"
-                    nodes.append({"id": lbl_node_id, "width": len(lbl.text) * 7, "height": 10})
-                    edges.append({
-                        "id": f"e_label_{lbl_id}",
-                        "sources": [elk_port_id],
-                        "targets": [lbl_node_id]
-                    })
-                    added_labels.add(lbl_id)
-
-                ports.append({
-                    "id": elk_port_id, 
-                    "x": px, "y": py, 
-                    "width": 0, "height": 0, 
-                    "layoutOptions": {
-                        "org.eclipse.elk.port.side": side
-                    }
-                })
-            
-            nodes.append({
-                "id": item.source_component_id, 
-                "width": body_w, "height": body_h, 
-                "ports": ports, 
-                "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}
-            })
+            node, comp_edges = self._build_elk_component_node(item, ports_by_comp[item.source_component_id], sheet_labels, added_labels, symbol_map)
+            nodes.append(node)
+            edges.extend(comp_edges)
         
         # 2. Sheet Boxes
         for cs in child_sheets:
-            bid = f"box_{cs.source_group_id}"
-            pins = [e for e in generated if isinstance(e, SchematicHierarchicalPin) and e.schematic_box_id == bid]
-            
-            west_pins = [p for i, p in enumerate(pins) if i < (len(pins) + 1) // 2]
-            east_pins = [p for i, p in enumerate(pins) if i >= (len(pins) + 1) // 2]
-            
-            max_w_west = max((len(p.text) for p in west_pins), default=0)
-            max_w_east = max((len(p.text) for p in east_pins), default=0)
-            inner_bw = max(250, (max_w_west + max_w_east) * 10 + 120)
-            # Use 20 units (2 grid points = 100 mils) spacing for pins for standard look
-            inner_bh = max(100, max(len(west_pins), len(east_pins)) * 20 + 50)
-            
-            inner_ports = []
-            box_hpin_ids = {p.schematic_hierarchical_pin_id for p in pins}
-            
-            for i, p in enumerate(west_pins):
-                py = (i + 1) * 20
-                elk_port_id = f"{bid}:{p.schematic_hierarchical_pin_id}"
-                
-                for lbl in [l for l in sheet_labels if l.schematic_hierarchical_pin_id == p.schematic_hierarchical_pin_id]:
-                    lbl_id = get_element_id(lbl)
-                    lbl_node_id = f"label_node_{lbl_id}"
-                    nodes.append({"id": lbl_node_id, "width": len(lbl.text) * 7, "height": 10})
-                    edges.append({
-                        "id": f"e_label_{lbl_id}",
-                        "sources": [elk_port_id],
-                        "targets": [lbl_node_id]
-                    })
-                    added_labels.add(lbl_id)
+            node, box_edges = self._build_elk_box_node(cs, sheet_id, sheet_labels, added_labels, generated)
+            nodes.append(node)
+            edges.extend(box_edges)
 
-                inner_ports.append({
-                    "id": elk_port_id, "x": 0, "y": py, 
-                    "width": 0, "height": 0, 
-                    "layoutOptions": {"org.eclipse.elk.port.side": "WEST"}
-                })
-            for i, p in enumerate(east_pins):
-                py = (i + 1) * 20
-                elk_port_id = f"{bid}:{p.schematic_hierarchical_pin_id}"
-                
-                for lbl in [l for l in sheet_labels if l.schematic_hierarchical_pin_id == p.schematic_hierarchical_pin_id]:
-                    lbl_id = get_element_id(lbl)
-                    lbl_node_id = f"label_node_{lbl_id}"
-                    nodes.append({"id": lbl_node_id, "width": len(lbl.text) * 7, "height": 10})
-                    edges.append({
-                        "id": f"e_label_{lbl_id}",
-                        "sources": [elk_port_id],
-                        "targets": [lbl_node_id]
-                    })
-                    added_labels.add(lbl_id)
-
-                inner_ports.append({
-                    "id": elk_port_id, "x": inner_bw, "y": py, 
-                    "width": 0, "height": 0, 
-                    "layoutOptions": {"org.eclipse.elk.port.side": "EAST"}
-                })
+        # 3. Connectivity Edges
+        edges.extend(self._build_elk_connectivity_edges(connectivity, components, child_sheets, ports_by_comp, generated))
             
-            if sheet_id != "root":
-                nodes.append({"id": bid, "width": inner_bw, "height": inner_bh, "ports": inner_ports, "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}})
+        options = {
+            "org.eclipse.elk.algorithm": "layered",
+            "org.eclipse.elk.spacing.nodeNode": "10" if sheet_id != "root" else "100",
+            "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": "40" if sheet_id != "root" else "150",
+            "org.eclipse.elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+            "org.eclipse.elk.aspectRatio": "1.414",
+            "org.eclipse.elk.padding": f"[top=200,left=200,bottom={ElkSizingConfig.TB_HEIGHT + 200},right={ElkSizingConfig.TB_WIDTH + 200}]"
+        }
+            
+        return {"id": sheet_id, "children": nodes, "edges": edges, "layoutOptions": options}
+
+    def _build_elk_component_node(self, item: SourceComponent, comp_ports: List[SourcePort], sheet_labels, added_labels, symbol_map) -> Tuple[ElkNode, List[Dict[str, Any]]]:
+        symbol = symbol_map.get(item.symbol_id)
+        body_w, body_h = (symbol.width, symbol.height) if symbol else (40, 40)
+        body_w, body_h = max(body_w, 10), max(body_h, 10)
+        
+        ports: List[ElkPort] = []
+        edges: List[Dict[str, Any]] = []
+        symbol_pins = {p.number: p for p in symbol.pins} if symbol else {}
+        
+        for p in comp_ports:
+            pi = symbol_pins.get(str(p.pin_number)) or next((pin for pin in symbol_pins.values() if pin.name == p.name), None)
+            if pi:
+                px, py = (pi.grid_offset.x - symbol.bounding_box_min.x, pi.grid_offset.y - symbol.bounding_box_min.y)
+                side = {"left": "EAST", "right": "WEST", "up": "SOUTH", "down": "NORTH"}.get(pi.direction, "WEST")
             else:
-                body_id = f"inner_body_{bid}"
-                name_id = f"text_name_{bid}"
-                file_id = f"text_file_{bid}"
-                name_text = cs.name or cs.source_group_id
-                file_text = f"File: {cs.source_group_id.replace('box_', '')}.kicad_sch"
+                px, py = 0, 0
+                side = "WEST"
+            
+            elk_port_id = f"{item.source_component_id}:{p.source_port_id}"
+            
+            for lbl in [l for l in sheet_labels if l.source_port_id == p.source_port_id]:
+                lbl_id = get_element_id(lbl)
+                lbl_node_id = f"label_node_{lbl_id}"
+                # In this refactor, we still keep label nodes as top-level children of the sheet for now
+                # but they are referenced by edges.
+                added_labels.add(lbl_id)
 
-                nodes.append({
-                    "id": bid,
-                    "children": [
-                        {"id": name_id, "width": len(name_text) * 10 + 60, "height": 40},
-                        {"id": body_id, "width": inner_bw, "height": inner_bh, "ports": inner_ports, "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}},
-                        {"id": file_id, "width": len(file_text) * 8 + 60, "height": 40}
-                    ],
-                    "edges": [
-                        {"id": f"edge_v1_{bid}", "sources": [name_id], "targets": [body_id]},
-                        {"id": f"edge_v2_{bid}", "sources": [body_id], "targets": [file_id]}
-                    ],
-                    "layoutOptions": {
-                        "org.eclipse.elk.algorithm": "layered",
-                        "org.eclipse.elk.direction": "DOWN", 
-                        "org.eclipse.elk.spacing.nodeNode": "100", 
-                        "org.eclipse.elk.padding": "[top=100,left=50,bottom=100,right=50]"
-                    }
-                })
+            ports.append({
+                "id": elk_port_id, 
+                "x": px, "y": py, 
+                "width": 0, "height": 0, 
+                "layoutOptions": {"org.eclipse.elk.port.side": side}
+            })
+        
+        return {
+            "id": item.source_component_id, 
+            "width": body_w, "height": body_h, 
+            "ports": ports, 
+            "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}
+        }, edges
 
-        # 3. Global Edges
+    def _build_elk_box_node(self, cs: SourceGroup, sheet_id: str, sheet_labels, added_labels, generated) -> Tuple[ElkNode, List[Dict[str, Any]]]:
+        bid = f"box_{cs.source_group_id}"
+        pins = [e for e in generated if isinstance(e, SchematicHierarchicalPin) and e.schematic_box_id == bid]
+        edges = []
+        
+        west_pins = [p for i, p in enumerate(pins) if i < (len(pins) + 1) // 2]
+        east_pins = [p for i, p in enumerate(pins) if i >= (len(pins) + 1) // 2]
+        
+        max_w_west = max((len(p.text) for p in west_pins), default=0)
+        max_w_east = max((len(p.text) for p in east_pins), default=0)
+        inner_bw = max(ElkSizingConfig.MIN_BOX_W, (max_w_west + max_w_east) * 10 + ElkSizingConfig.BOX_PADDING)
+        inner_bh = max(ElkSizingConfig.MIN_BOX_H, max(len(west_pins), len(east_pins)) * ElkSizingConfig.PIN_SPACING + 50)
+        
+        inner_ports = []
+        
+        for i, p in enumerate(west_pins):
+            py = (i + 1) * ElkSizingConfig.PIN_SPACING
+            elk_port_id = f"{bid}:{p.schematic_hierarchical_pin_id}"
+            inner_ports.append({"id": elk_port_id, "x": 0, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "WEST"}})
+            for lbl in [l for l in sheet_labels if l.schematic_hierarchical_pin_id == p.schematic_hierarchical_pin_id]:
+                added_labels.add(get_element_id(lbl))
+
+        for i, p in enumerate(east_pins):
+            py = (i + 1) * ElkSizingConfig.PIN_SPACING
+            elk_port_id = f"{bid}:{p.schematic_hierarchical_pin_id}"
+            inner_ports.append({"id": elk_port_id, "x": inner_bw, "y": py, "width": 0, "height": 0, "layoutOptions": {"org.eclipse.elk.port.side": "EAST"}})
+            for lbl in [l for l in sheet_labels if l.schematic_hierarchical_pin_id == p.schematic_hierarchical_pin_id]:
+                added_labels.add(get_element_id(lbl))
+
+        if sheet_id != "root":
+            return {"id": bid, "width": inner_bw, "height": inner_bh, "ports": inner_ports, "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}}, edges
+        else:
+            return {
+                "id": bid,
+                "children": [
+                    {"id": f"text_name_{bid}", "width": len(cs.name or cs.source_group_id) * 10 + 60, "height": 40},
+                    {"id": f"inner_body_{bid}", "width": inner_bw, "height": inner_bh, "ports": inner_ports, "layoutOptions": {"org.eclipse.elk.portConstraints": "FIXED_POS"}},
+                    {"id": f"text_file_{bid}", "width": len(f"File: {cs.source_group_id}.kicad_sch") * 8 + 60, "height": 40}
+                ],
+                "edges": [
+                    {"id": f"edge_v1_{bid}", "sources": [f"text_name_{bid}"], "targets": [f"inner_body_{bid}"]},
+                    {"id": f"edge_v2_{bid}", "sources": [f"inner_body_{bid}"], "targets": [f"text_file_{bid}"]}
+                ],
+                "layoutOptions": {
+                    "org.eclipse.elk.algorithm": "layered",
+                    "org.eclipse.elk.direction": "DOWN", 
+                    "org.eclipse.elk.spacing.nodeNode": "100", 
+                    "org.eclipse.elk.padding": "[top=100,left=50,bottom=100,right=50]"
+                }
+            }, []
+
+    def _build_elk_connectivity_edges(self, connectivity, components, child_sheets, ports_by_comp, generated) -> List[Dict[str, Any]]:
+        edges = []
         port_to_elk_id = {}
         for item in components:
-            for p in [p for p in all_ports if p.source_component_id == item.source_component_id]:
+            for p in ports_by_comp[item.source_component_id]:
                 port_to_elk_id[p.source_port_id] = f"{item.source_component_id}:{p.source_port_id}"
         for cs in child_sheets:
             bid = f"box_{cs.source_group_id}"
@@ -440,33 +457,15 @@ class AutoLayoutEngine:
                 for target_port_id in sip[1:]: 
                     tgt_elk_port = port_to_elk_id.get(target_port_id)
                     if src_elk_port and tgt_elk_port:
-                        edges.append({
-                            "id": f"e_{conn['trace_id']}_{target_port_id}", 
-                            "sources": [src_elk_port], 
-                            "targets": [tgt_elk_port]
-                        })
+                        edges.append({"id": f"e_{conn['trace_id']}_{target_port_id}", "sources": [src_elk_port], "targets": [tgt_elk_port]})
             if conn["is_inter_sheet"] and conn["hpin_id"]:
                 src_elk_port = port_to_elk_id.get(sip[0])
                 tgt_elk_port = port_to_elk_id.get(conn["hpin_id"])
                 if src_elk_port and tgt_elk_port:
-                    edges.append({
-                        "id": f"e_to_hpin_{conn['trace_id']}", 
-                        "sources": [src_elk_port], 
-                        "targets": [tgt_elk_port]
-                    })
-            
-        options = {
-            "org.eclipse.elk.algorithm": "layered",
-            "org.eclipse.elk.spacing.nodeNode": "10" if sheet_id != "root" else "100",
-            "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": "40" if sheet_id != "root" else "150",
-            "org.eclipse.elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
-            "org.eclipse.elk.aspectRatio": "1.414",
-            "org.eclipse.elk.padding": f"[top=200,left=200,bottom={TB_HEIGHT + 200},right={TB_WIDTH + 200}]"
-        }
-            
-        return {"id": sheet_id, "children": nodes, "ports": [], "edges": edges, "layoutOptions": options}
+                    edges.append({"id": f"e_to_hpin_{conn['trace_id']}", "sources": [src_elk_port], "targets": [tgt_elk_port]})
+        return edges
 
-    def _parse_sheet_layout(self, sheet_id, data, components, all_ports, subgroups, child_sheets, generated, symbol_map):
+    def _parse_sheet_layout(self, sheet_id, data, components, ports_by_comp, subgroups, child_sheets, generated, symbol_map):
         results = []
         def snap(v): return float(round(v / KICAD_GRID_UNITS) * KICAD_GRID_UNITS)
 
@@ -521,7 +520,7 @@ class AutoLayoutEngine:
                 results.append(SchematicComponent(schematic_component_id=f"sch_{comp_id}", sheet_id=sheet_id, source_component_id=comp_id, center=Point(x=nx - off.x, y=ny - off.y)))
 
                 # Generate SchematicPort elements and handle Port Labels
-                comp_ports = [p for p in all_ports if p.source_component_id == comp_id]
+                comp_ports = ports_by_comp[comp_id]
                 symbol_pins = {p.number: p for p in sym.pins} if sym else {}
 
                 for p in comp_ports:

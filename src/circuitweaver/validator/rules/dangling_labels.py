@@ -60,7 +60,7 @@ class DanglingLabelsRule(ValidationRule):
         # (sheet_id, x, y) -> set of net_ids
         net_at_point: Dict[Tuple[str, int, int], Set[str]] = defaultdict(set)
         
-        def snap_coord(c): return (round(c.x), round(c.y))
+        def snap_coord(c): return (int(round(c.x)), int(round(c.y)))
 
         for e in elements:
             if isinstance(e, SchematicPort):
@@ -71,11 +71,13 @@ class DanglingLabelsRule(ValidationRule):
                 net_at_point[(e.sheet_id, *snap_coord(e.center))].add(e.source_net_id)
             
             elif isinstance(e, SchematicTrace):
-                # Try to determine the net of this trace
                 nid = None
-                if e.source_trace_id and e.source_trace_id in source_traces:
-                    st = source_traces[e.source_trace_id]
-                    nid = st.connected_source_net_ids[0] if st.connected_source_net_ids else None
+                if e.source_trace_id:
+                    if e.source_trace_id in source_traces:
+                        st = source_traces[e.source_trace_id]
+                        nid = st.connected_source_net_ids[0] if st.connected_source_net_ids else e.source_trace_id
+                    else:
+                        nid = e.source_trace_id
                 
                 if nid:
                     for edge in e.edges:
@@ -85,18 +87,25 @@ class DanglingLabelsRule(ValidationRule):
         # 3. Validate Labels
         for e in elements:
             if isinstance(e, (SchematicNetLabel, SchematicHierarchicalLabel)):
+                # If it's at (0,0), it definitely wasn't positioned correctly
+                if int(round(e.center.x)) == 0 and int(round(e.center.y)) == 0:
+                    result.add_warning(
+                        self.name,
+                        f"Label '{e.text}' (Net: {e.source_net_id}) on sheet '{e.sheet_id}' is at (0,0). "
+                        "It likely failed to match any pin for positioning.",
+                        element_id=get_element_id(e)
+                    )
+                    continue
+
                 point = (e.sheet_id, *snap_coord(e.center))
                 nets_here = net_at_point.get(point, set())
                 
-                if e.source_net_id not in nets_here:
-                    # Tolerance check: maybe it's slightly off? 
-                    # We already used round(), but let's check immediate neighbors if needed.
-                    # For now, stick to exact grid points.
-                    
+                if e.source_net_id and e.source_net_id not in nets_here:
+                    # Stricter check for positioned labels
                     result.add_warning(
                         self.name,
                         f"Label '{e.text}' (Net: {e.source_net_id}) on sheet '{e.sheet_id}' is at {snap_coord(e.center)} "
-                        f"but no matching net connection found. Found nets at this point: {list(nets_here) or 'None'}",
+                        f"but no matching net connection found at this point. Nets here: {list(nets_here) or 'None'}",
                         element_id=get_element_id(e)
                     )
 

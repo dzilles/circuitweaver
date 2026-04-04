@@ -26,6 +26,7 @@ from circuitweaver.types.circuit_json import (
 )
 from circuitweaver.validator.result import ValidationResult
 from circuitweaver.validator.rules import (
+    DanglingLabelsRule,
     SourcePortCompletenessRule,
     SourceReferencesRule,
     TraceConnectionsRule,
@@ -42,6 +43,7 @@ VALIDATION_RULES: list[type[ValidationRule]] = [
     SourceReferencesRule,
     TraceConnectionsRule,
     SourcePortCompletenessRule,
+    DanglingLabelsRule,
 ]
 
 

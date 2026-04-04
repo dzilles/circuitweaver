@@ -5,9 +5,9 @@ import re
 import uuid
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-from circuitweaver.library.pinout import get_expanded_symbol_definition
+from circuitweaver.library.pinout import get_expanded_symbol_definition, SymbolInfo
 from circuitweaver.types.circuit_json import (
     CircuitElement,
     SchematicBox,
@@ -26,6 +26,49 @@ logger = logging.getLogger(__name__)
 
 # Grid unit to mm conversion (1 grid = 5mil = 0.127mm)
 GRID_TO_MM = Decimal('0.127')
+
+
+class SExp:
+    """A lightweight S-Expression builder."""
+
+    def __init__(self, name: str, *args: Any):
+        self.name = name
+        self.args = list(args)
+
+    def serialize(self, indent_level: int = 0) -> str:
+        """Serialize to string with proper indentation and quoting."""
+        indent = "  " * indent_level
+        inner = []
+        for arg in self.args:
+            if isinstance(arg, SExp):
+                inner.append("\n" + arg.serialize(indent_level + 1))
+            elif isinstance(arg, (list, tuple)):
+                for item in arg:
+                    if isinstance(item, SExp):
+                        inner.append("\n" + item.serialize(indent_level + 1))
+                    else:
+                        inner.append(self._format_value(item))
+            else:
+                formatted = self._format_value(arg)
+                if formatted:
+                    inner.append(formatted)
+
+        inner_str = " ".join(inner)
+        return f"{indent}({self.name} {inner_str})"
+
+    def _format_value(self, val: Any) -> str:
+        if val is None:
+            return ""
+        if isinstance(val, bool):
+            return "yes" if val else "no"
+        if isinstance(val, (int, float, Decimal)):
+            return str(val)
+        
+        s = str(val)
+        if any(c in s for c in ' ()"\t\n') or not s:
+            escaped = s.replace('"', '\\"')
+            return f'"{escaped}"'
+        return s
 
 
 class KiCadWriter:
@@ -55,38 +98,40 @@ class KiCadWriter:
             if not hasattr(e, "sheet_id") or e.sheet_id == sheet_id
         ]
 
-        lines = [
-            "(kicad_sch",
-            "  (version 20260306)",
-            '  (generator "eeschema")',
-            '  (generator_version "10.0")',
-            f'  (uuid "{self._new_uuid()}")',
-            '  (paper "A4")',
-        ]
+        sch = SExp("kicad_sch",
+            SExp("version", 20260306),
+            SExp("generator", "eeschema"),
+            SExp("generator_version", "10.0"),
+            SExp("uuid", self._new_uuid()),
+            SExp("paper", "A4"),
+        )
 
         sheet_components = [e for e in sheet_elements if isinstance(e, SchematicComponent)]
         sheet_pins = [e for e in sheet_elements if isinstance(e, SchematicHierarchicalPin)]
         sheet_h_labels = [e for e in sheet_elements if isinstance(e, SchematicHierarchicalLabel)]
         sheet_net_labels = [e for e in sheet_elements if isinstance(e, SchematicNetLabel)]
-        sheet_no_connects = [e for e in sheet_elements if isinstance(e, SchematicNoConnect)]
         
         # 1. Symbol Library definitions
-        lines.append("  (lib_symbols")
+        lib_symbols = SExp("lib_symbols")
         if sheet_components:
             symbols_needed, lib_id_to_lib_name = self._collect_symbols_recursive(
                 sheet_components, source_components
             )
             for symbol_def in symbols_needed:
-                lines.append(symbol_def)
+                # symbol_def is already a string, we inject it manually in serialize or handle it here
+                # For simplicity, we can store it as a special type or just a string that SExp knows not to quote
+                # But our _format_value quotes everything with spaces. 
+                # Let's add a RawSExp or handle strings starting with '(' as raw for now.
+                lib_symbols.args.append(symbol_def)
         else:
             lib_id_to_lib_name = {}
-        lines.append("  )")
+        sch.args.append(lib_symbols)
 
         # 2. Hierarchical Sheets (Boxes)
         sheet_boxes = [e for e in sheet_elements if isinstance(e, SchematicBox) and e.is_hierarchical_sheet]
         for box in sheet_boxes:
             pins = [p for p in sheet_pins if p.schematic_box_id == box.schematic_box_id]
-            lines.extend(self._write_hierarchical_sheet(box, pins))
+            sch.args.append(self._write_hierarchical_sheet(box, pins))
 
         # 3. Component Instances
         for comp in sheet_components:
@@ -97,13 +142,14 @@ class KiCadWriter:
                 try:
                     symbol = get_symbol_info(source.symbol_id)
                 except Exception: pass
-            lines.extend(self._write_component(comp, source_components, lib_id_to_lib_name, symbol))
+            sch.args.append(self._write_component(comp, source_components, lib_id_to_lib_name, symbol))
 
         # 4. Traces & Junctions
         point_counts = defaultdict(int)
         for element in sheet_elements:
             if isinstance(element, SchematicTrace):
-                lines.extend(self._write_trace(element))
+                for wire in self._write_trace(element):
+                    sch.args.append(wire)
                 for edge in element.edges:
                     point_counts[(int(round(edge.from_.x)), int(round(edge.from_.y)))] += 1
                     point_counts[(int(round(edge.to.x)), int(round(edge.to.y)))] += 1
@@ -119,39 +165,54 @@ class KiCadWriter:
             if count >= 3:
                 x_mm = self._grid_to_mm(gx)
                 y_mm = self._grid_to_mm(gy)
-                lines.append(f'  (junction (at {x_mm} {y_mm}) (uuid "{self._new_uuid()}"))')
+                sch.args.append(SExp("junction", SExp("at", x_mm, y_mm), SExp("uuid", self._new_uuid())))
 
         # 5. Labels & Text & No-Connects
         for element in sheet_elements:
             if isinstance(element, SchematicNetLabel):
-                lines.extend(self._write_label(element))
+                sch.args.append(self._write_label(element))
             elif isinstance(element, SchematicHierarchicalLabel):
-                lines.extend(self._write_hierarchical_label(element))
+                sch.args.append(self._write_hierarchical_label(element))
             elif isinstance(element, SchematicText):
-                lines.extend(self._write_text(element))
+                sch.args.append(self._write_text(element))
             elif isinstance(element, SchematicNoConnect):
-                lines.extend(self._write_no_connect(element))
+                nc = self._write_no_connect(element)
+                if nc: sch.args.append(nc)
 
         # 6. Graphic Boxes
         for element in sheet_elements:
             if isinstance(element, SchematicBox) and not element.is_hierarchical_sheet:
-                lines.extend(self._write_box(element))
+                sch.args.append(self._write_box(element))
 
-        lines.append("  (sheet_instances")
-        lines.append(f'    (path "/" (page "1"))')
-        lines.append("  )")
-        lines.append("  (embedded_fonts no)")
-        lines.append(")")
+        sch.args.append(SExp("sheet_instances", SExp("path", "/", SExp("page", "1"))))
+        sch.args.append(SExp("embedded_fonts", False))
 
-        return "\n".join(lines)
+        # We need to handle the raw symbol strings in serialize.
+        # Let's override serialize slightly or adjust SExp.
+        return self._serialize_sch(sch)
 
-    def _write_no_connect(self, nc: SchematicNoConnect) -> List[str]:
-        if not nc.position: return []
+    def _serialize_sch(self, sch: SExp) -> str:
+        # A simple hack: SExp._format_value normally quotes. 
+        # We want to avoid quoting the symbol_def strings which start with whitespace and '('
+        original_format = SExp._format_value
+        def custom_format(self_obj, val):
+            if isinstance(val, str) and val.strip().startswith("("):
+                return val # Return as-is
+            return original_format(self_obj, val)
+        
+        SExp._format_value = custom_format
+        try:
+            return sch.serialize()
+        finally:
+            SExp._format_value = original_format
+
+    def _write_no_connect(self, nc: SchematicNoConnect) -> Optional[SExp]:
+        if not nc.position: return None
         x = self._grid_to_mm(nc.position.x)
         y = self._grid_to_mm(nc.position.y)
-        return [f'  (no_connect (at {x} {y}) (uuid "{self._new_uuid()}"))']
+        return SExp("no_connect", SExp("at", x, y), SExp("uuid", self._new_uuid()))
 
-    def _write_hierarchical_sheet(self, box: SchematicBox, pins: List[SchematicHierarchicalPin]) -> List[str]:
+    def _write_hierarchical_sheet(self, box: SchematicBox, pins: List[SchematicHierarchicalPin]) -> SExp:
         x = self._grid_to_mm(box.x); y = self._grid_to_mm(box.y)
         w = self._grid_to_mm(box.width); h = self._grid_to_mm(box.height)
         sheet_name = box.name or box.schematic_box_id
@@ -161,30 +222,64 @@ class KiCadWriter:
         ny_mm = self._grid_to_mm(box.y + box.name_offset.y)
         fy_mm = self._grid_to_mm(box.y + box.file_offset.y)
         
-        lines = [
-            f'  (sheet (at {x} {y}) (size {w} {h})',
-            '    (fields_autoplaced yes)',
-            '    (stroke (width 0.1524) (type solid))',
-            '    (fill (color 0 0 0 0))',
-            f'    (uuid "{self._new_uuid()}")',
-            f'    (property "Sheetname" "{sheet_name}" (at {x_mid_mm} {ny_mm} 0) (effects (font (size 1.27 1.27)) (justify left top)))',
-            f'    (property "Sheetfile" "{file_name}" (at {x_mid_mm} {fy_mm} 0) (effects (font (size 1.27 1.27)) (justify left top)))'
-        ]
+        inner_pins = []
         for pin in pins:
             px = self._grid_to_mm(pin.center.x)
             py = self._grid_to_mm(pin.center.y)
             justify = "left" if int(round(pin.center.x)) <= int(round(box.x)) else "right"
             angle = 180 if int(round(pin.center.x)) <= int(round(box.x)) else 0
-            lines.append(f'    (pin "{pin.text}" input (at {px} {py} {angle}) (uuid "{self._new_uuid()}") (effects (font (size 1.27 1.27)) (justify {justify})))')
-        lines.append('  )')
-        return lines
+            inner_pins.append(SExp("pin", pin.text, "input", 
+                SExp("at", px, py, angle), 
+                SExp("uuid", self._new_uuid()),
+                SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", justify))
+            ))
 
-    def _write_hierarchical_label(self, label: SchematicHierarchicalLabel) -> List[str]:
+        return SExp("sheet", 
+            SExp("at", x, y), SExp("size", w, h),
+            SExp("fields_autoplaced", True),
+            SExp("stroke", SExp("width", 0.1524), SExp("type", "solid")),
+            SExp("fill", SExp("color", 0, 0, 0, 0)),
+            SExp("uuid", self._new_uuid()),
+            SExp("property", "Sheetname", sheet_name, SExp("at", x_mid_mm, ny_mm, 0), SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", "left", "top"))),
+            SExp("property", "Sheetfile", file_name, SExp("at", x_mid_mm, fy_mm, 0), SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", "left", "top"))),
+            *inner_pins
+        )
+
+    def _write_hierarchical_label(self, label: SchematicHierarchicalLabel) -> SExp:
         x = self._grid_to_mm(label.center.x); y = self._grid_to_mm(label.center.y)
-        # Use angle AND justification for sub-sheet hierarchical labels
         angle = {"right": 0, "top": 90, "left": 180, "bottom": 270}.get(label.anchor_side, 0)
         justify = label.anchor_side
-        return [f'  (hierarchical_label "{label.text}" (shape input) (at {x} {y} {angle}) (effects (font (size 1.27 1.27)) (justify {justify})) (uuid "{self._new_uuid()}"))']
+        return SExp("hierarchical_label", label.text, SExp("shape", "input"),
+            SExp("at", x, y, angle),
+            SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", justify)),
+            SExp("uuid", self._new_uuid())
+        )
+
+    def _write_label(self, label: SchematicNetLabel) -> SExp:
+        x = self._grid_to_mm(label.center.x); y = self._grid_to_mm(label.center.y)
+        angle = {"right": 0, "top": 90, "left": 180, "bottom": 270}.get(label.anchor_side, 0)
+        justify = label.anchor_side
+        return SExp("label", label.text, SExp("at", x, y, angle),
+            SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", justify)),
+            SExp("uuid", self._new_uuid())
+        )
+
+    def _write_text(self, text: SchematicText) -> SExp:
+        x = self._grid_to_mm(text.position.x); y = self._grid_to_mm(text.position.y)
+        return SExp("text", text.text.replace("\n", "\\n"), 
+            SExp("at", x, y, text.rotation),
+            SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", "left")),
+            SExp("uuid", self._new_uuid())
+        )
+
+    def _write_box(self, box: SchematicBox) -> SExp:
+        x1, y1 = self._grid_to_mm(box.x), self._grid_to_mm(box.y)
+        x2, y2 = self._grid_to_mm(box.x + box.width), self._grid_to_mm(box.y + box.height)
+        return SExp("rectangle", SExp("start", x1, y1), SExp("end", x2, y2),
+            SExp("stroke", SExp("width", 0.1524), SExp("type", "default")),
+            SExp("fill", SExp("type", "none")),
+            SExp("uuid", self._new_uuid())
+        )
 
     def _resolve_lib_id(self, comp: SchematicComponent, source: Optional[SourceComponent]) -> str:
         if comp.symbol_name and ":" in comp.symbol_name: return comp.symbol_name
@@ -214,7 +309,7 @@ class KiCadWriter:
         prefix = " " * indent
         return "\n".join(prefix + line if line.strip() else line for line in sexp.split("\n"))
 
-    def _write_component(self, comp: SchematicComponent, sources: Dict[str, SourceComponent], lib_id_to_lib_name: Dict[str, str], symbol: Optional[SymbolInfo] = None) -> List[str]:
+    def _write_component(self, comp: SchematicComponent, sources: Dict[str, SourceComponent], lib_id_to_lib_name: Dict[str, str], symbol: Optional[SymbolInfo] = None) -> SExp:
         source = sources.get(comp.source_component_id)
         lib_id = self._resolve_lib_id(comp, source)
         lib_name = lib_id_to_lib_name.get(lib_id, lib_id)
@@ -224,72 +319,53 @@ class KiCadWriter:
         ref_y = self._grid_to_mm(comp.center.y - 20)
         val_y = self._grid_to_mm(comp.center.y + 20)
         
-        lines = [
-            "\t(symbol",
-            f'\t\t(lib_name "{lib_name}")',
-            f'\t\t(lib_id "{lib_id}")',
-            f"\t\t(at {x} {y} {comp.rotation})",
-            "\t\t(unit 1)",
-            "\t\t(body_style 1)",
-            "\t\t(exclude_from_sim no)",
-            "\t\t(in_bom yes)",
-            "\t\t(on_board yes)",
-            "\t\t(in_pos_files yes)",
-            "\t\t(dnp no)",
-            "\t\t(fields_autoplaced yes)",
-            f'\t\t(uuid "{self._new_uuid()}")',
-            f'\t\t(property "Reference" "{ref}"',
-            f"\t\t\t(at {x} {ref_y} 0)",
-            "\t\t\t(show_name no)",
-            "\t\t\t(do_not_autoplace no)",
-            "\t\t\t(effects (font (size 1.27 1.27)) (justify left))",
-            "\t\t)",
-            f'\t\t(property "Value" "{val}"',
-            f"\t\t\t(at {x} {val_y} 0)",
-            "\t\t\t(show_name no)",
-            "\t\t\t(do_not_autoplace no)",
-            "\t\t\t(effects (font (size 1.27 1.27)) (justify left))",
-            "\t\t)"
-        ]
+        sexp = SExp("symbol",
+            SExp("lib_name", lib_name),
+            SExp("lib_id", lib_id),
+            SExp("at", x, y, comp.rotation),
+            SExp("unit", 1),
+            SExp("body_style", 1),
+            SExp("exclude_from_sim", False),
+            SExp("in_bom", True),
+            SExp("on_board", True),
+            SExp("in_pos_files", True),
+            SExp("dnp", False),
+            SExp("fields_autoplaced", True),
+            SExp("uuid", self._new_uuid()),
+            SExp("property", "Reference", ref, 
+                SExp("at", x, ref_y, 0),
+                SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", "left"))
+            ),
+            SExp("property", "Value", val,
+                SExp("at", x, val_y, 0),
+                SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", "left"))
+            )
+        )
         
         if source and source.footprint:
-            lines.append(f'\t\t(property "Footprint" "{source.footprint}"')
-            lines.append(f"\t\t\t(at {x} {y} 0)")
-            lines.append("\t\t\t(hide yes)")
-            lines.append("\t\t\t(show_name no)")
-            lines.append("\t\t\t(do_not_autoplace no)")
-            lines.append("\t\t\t(effects (font (size 1.27 1.27)) (justify right))")
-            lines.append("\t\t)")
+            sexp.args.append(SExp("property", "Footprint", source.footprint,
+                SExp("at", x, y, 0),
+                SExp("hide", True),
+                SExp("effects", SExp("font", SExp("size", 1.27, 1.27)), SExp("justify", "right"))
+            ))
         
         if symbol:
             for pin in symbol.pins:
-                lines.append(f'\t\t(pin "{pin.number}" (uuid "{self._new_uuid()}"))')
+                sexp.args.append(SExp("pin", pin.number, SExp("uuid", self._new_uuid())))
         
-        lines.append("\t)")
-        return lines
+        return sexp
 
-    def _write_trace(self, trace: SchematicTrace) -> List[str]:
-        lines = []
+    def _write_trace(self, trace: SchematicTrace) -> List[SExp]:
+        sexps = []
         for edge in trace.edges:
             x1, y1 = self._grid_to_mm(edge.from_.x), self._grid_to_mm(edge.from_.y)
             x2, y2 = self._grid_to_mm(edge.to.x), self._grid_to_mm(edge.to.y)
-            lines.append(f'  (wire (pts (xy {x1} {y1}) (xy {x2} {y2})) (stroke (width 0) (type default)) (uuid "{self._new_uuid()}"))')
-        return lines
-
-    def _write_label(self, label: SchematicNetLabel) -> List[str]:
-        x = self._grid_to_mm(label.center.x); y = self._grid_to_mm(label.center.y)
-        angle = {"right": 0, "top": 90, "left": 180, "bottom": 270}.get(label.anchor_side, 0)
-        justify = label.anchor_side
-        return [f'  (label "{label.text}" (at {x} {y} {angle}) (effects (font (size 1.27 1.27)) (justify {justify})) (uuid "{self._new_uuid()}"))']
-
-    def _write_text(self, text: SchematicText) -> List[str]:
-        x = self._grid_to_mm(text.position.x); y = self._grid_to_mm(text.position.y)
-        return [f'  (text "{text.text.replace("\n", "\\n")}" (at {x} {y} {text.rotation}) (effects (font (size 1.27 1.27)) (justify left)) (uuid "{self._new_uuid()}"))']
-
-    def _write_box(self, box: SchematicBox) -> List[str]:
-        x1, y1 = self._grid_to_mm(box.x), self._grid_to_mm(box.y)
-        x2, y2 = self._grid_to_mm(box.x + box.width), self._grid_to_mm(box.y + box.height)
-        return [f'  (rectangle (start {x1} {y1}) (end {x2} {y2}) (stroke (width 0.1524) (type default)) (fill (type none)) (uuid "{self._new_uuid()}"))']
+            sexps.append(SExp("wire", 
+                SExp("pts", SExp("xy", x1, y1), SExp("xy", x2, y2)),
+                SExp("stroke", SExp("width", 0), SExp("type", "default")),
+                SExp("uuid", self._new_uuid())
+            ))
+        return sexps
 
     def write_project(self, project_name: str, sheet_ids: List[str]) -> str:
         sheets = [["Root", f"{project_name}.kicad_sch"]]

@@ -91,19 +91,36 @@ def get_symbol_info(symbol_id: str) -> SymbolInfo:
             all_pins[p.number] = p
         
         pins = list(all_pins.values())
+        graphics_content = symbol_content + "\n" + content[_find_symbol_start(content, base_name):_find_symbol_start(content, base_name)+2000] # Approximate
+        # Better: get full base content
+        base_start = _find_symbol_start(content, base_name)
+        base_full_content = _extract_balanced_sexp(content, base_start)
+        graphics_content = symbol_content + "\n" + base_full_content
     else:
         pins = _extract_pins(symbol_content)
+        graphics_content = symbol_content
 
-    if not pins:
+    # Extract graphics bounds
+    g_bounds = _extract_graphic_bounds(graphics_content)
+    
+    if g_bounds:
+        min_x_mm, max_x_mm, min_y_mm, max_y_mm = g_bounds
+        # Convert KiCad mm to our grid units (1 grid = 0.127mm)
+        # Note: In symbols, Y goes UP. In schematics, Y goes DOWN. Negate Y.
+        min_x = int(round(min_x_mm / 0.127))
+        max_x = int(round(max_x_mm / 0.127))
+        min_y = int(round(-max_y_mm / 0.127)) # max_y_mm is top, so it becomes min_y in grid
+        max_y = int(round(-min_y_mm / 0.127)) # min_y_mm is bottom, so it becomes max_y in grid
+    elif pins:
+        min_x = min(p.grid_offset.x for p in pins)
+        max_x = max(p.grid_offset.x for p in pins)
+        min_y = min(p.grid_offset.y for p in pins)
+        max_y = max(p.grid_offset.y for p in pins)
+    else:
         return SymbolInfo(
             symbol_id=symbol_id, name=sym_name, pins=[],
             bounding_box_min=GridOffset(0, 0), bounding_box_max=GridOffset(40, 40),
         )
-
-    min_x = min(p.grid_offset.x for p in pins)
-    max_x = max(p.grid_offset.x for p in pins)
-    min_y = min(p.grid_offset.y for p in pins)
-    max_y = max(p.grid_offset.y for p in pins)
 
     # Return tight bounding box (no padding)
     return SymbolInfo(
@@ -113,6 +130,30 @@ def get_symbol_info(symbol_id: str) -> SymbolInfo:
         bounding_box_min=GridOffset(min_x, min_y),
         bounding_box_max=GridOffset(max_x, max_y),
     )
+
+
+def _extract_graphic_bounds(symbol_content: str) -> tuple[float, float, float, float] | None:
+    """Extract the min_x, max_x, min_y, max_y in mm from symbol graphics."""
+    xs, ys = [], []
+
+    # 1. Rectangles: (rectangle (start X Y) (end X Y))
+    for match in re.finditer(r'\(rectangle\s+\(start\s+([-\d.]+)\s+([-\d.]+)\)\s+\(end\s+([-\d.]+)\s+([-\d.]+)\)', symbol_content):
+        xs.extend([float(match.group(1)), float(match.group(3))])
+        ys.extend([float(match.group(2)), float(match.group(4))])
+
+    # 2. Polylines/Polygons: extract any (xy X Y) points
+    for match in re.finditer(r'\(xy\s+([-\d.]+)\s+([-\d.]+)\)', symbol_content):
+        xs.append(float(match.group(1)))
+        ys.append(float(match.group(2)))
+
+    # 3. Circles: (circle (center X Y) (radius R))
+    for match in re.finditer(r'\(circle\s+\(center\s+([-\d.]+)\s+([-\d.]+)\)\s+\(radius\s+([-\d.]+)\)', symbol_content):
+        cx, cy, r = float(match.group(1)), float(match.group(2)), float(match.group(3))
+        xs.extend([cx - r, cx + r])
+        ys.extend([cy - r, cy + r])
+
+    if not xs or not ys: return None
+    return min(xs), max(xs), min(ys), max(ys)
 
 
 def _find_symbol_start(content: str, symbol_name: str) -> int:
