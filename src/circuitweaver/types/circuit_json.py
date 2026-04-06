@@ -26,6 +26,13 @@ class Point(BaseModel):
     y: float
 
 
+class GridOffset(BaseModel):
+    """X, Y offset in grid units."""
+
+    x: int
+    y: int
+
+
 class Size(BaseModel):
     """Width, height pair."""
 
