@@ -45,27 +45,51 @@ class SExp:
     def serialize(self, indent_level: int = 0) -> str:
         """Serialize to string with proper indentation and quoting."""
         indent = "  " * indent_level
-        inner = []
-        for arg in self.args:
-            if isinstance(arg, SExp):
-                inner.append("\n" + arg.serialize(indent_level + 1))
-            elif isinstance(arg, (list, tuple)):
-                for item in arg:
-                    if isinstance(item, SExp):
-                        inner.append("\n" + item.serialize(indent_level + 1))
-                    else:
-                        inner.append(self._format_value(item))
-            else:
-                formatted = self._format_value(arg)
-                if formatted:
-                    inner.append(formatted)
+        
+        if not self.args:
+            return f"{indent}({self.name})"
 
-        inner_str = " ".join(inner)
-        return f"{indent}({self.name} {inner_str})"
+        # Check if we should use multiline format
+        is_multiline = (
+            len(self.args) > 5 or
+            any(isinstance(arg, RawString) and "\n" in arg.value for arg in self.args) or
+            any(isinstance(arg, SExp) for arg in self.args) or
+            any(isinstance(arg, (list, tuple)) and any(isinstance(i, SExp) for i in arg) for arg in self.args)
+        )
+
+        if not is_multiline:
+            args_formatted = [self._format_value(arg) for arg in self.args]
+            args_str = " ".join(f for f in args_formatted if f)
+            return f"{indent}({self.name} {args_str})"
+        else:
+            lines = [f"{indent}({self.name}"]
+            for arg in self.args:
+                if isinstance(arg, SExp):
+                    lines.append(arg.serialize(indent_level + 1))
+                elif isinstance(arg, RawString):
+                    for rl in arg.value.split("\n"):
+                        if rl.strip():
+                            lines.append("  " * (indent_level + 1) + rl.strip())
+                elif isinstance(arg, (list, tuple)):
+                    for item in arg:
+                        if isinstance(item, SExp):
+                            lines.append(item.serialize(indent_level + 1))
+                        else:
+                            f = self._format_value(item)
+                            if f: lines.append("  " * (indent_level + 1) + f)
+                else:
+                    f = self._format_value(arg)
+                    if f: lines.append("  " * (indent_level + 1) + f)
+            lines.append(f"{indent})")
+            return "\n".join(lines)
 
     def _format_value(self, val: Any) -> str:
         if val is None:
             return ""
+        if isinstance(val, SExp):
+            # For single-line inclusion, use minimal formatting
+            args_str = " ".join(f for f in [self._format_value(a) for a in val.args] if f)
+            return f"({val.name} {args_str})"
         if isinstance(val, RawString):
             return val.value
         if isinstance(val, bool):
@@ -74,7 +98,8 @@ class SExp:
             return str(val)
         
         s = str(val)
-        if any(c in s for c in ' ()"\t\n') or not s:
+        # KiCad is picky about quoting. Quote if it contains special characters, is empty, OR is all digits.
+        if any(c in s for c in ' ()"\t\n:;/') or not s or s.isdigit():
             escaped = s.replace('"', '\\"')
             return f'"{escaped}"'
         return s
@@ -91,8 +116,8 @@ class KiCadWriter:
         return str(uuid.uuid4())
 
     def _grid_to_mm(self, grid: float) -> str:
-        """Convert grid units to millimeters with strict rounding."""
-        val = Decimal(str(grid)).quantize(Decimal('1'), rounding=ROUND_HALF_UP) * GRID_TO_MM
+        """Convert grid units to millimeters, preserving fractional precision."""
+        val = Decimal(str(grid)) * GRID_TO_MM
         return "{:.4f}".format(val)
 
     def write_schematic(
@@ -116,7 +141,8 @@ class KiCadWriter:
         )
 
         sheet_components = [e for e in sheet_elements if isinstance(e, SchematicComponent)]
-        sheet_pins = [e for e in sheet_elements if isinstance(e, SchematicHierarchicalPin)]
+        sheet_hier_pins = [e for e in sheet_elements if isinstance(e, SchematicHierarchicalPin)]
+        sheet_ports = [e for e in sheet_elements if isinstance(e, SchematicPort)]
         sheet_h_labels = [e for e in sheet_elements if isinstance(e, SchematicHierarchicalLabel)]
         sheet_net_labels = [e for e in sheet_elements if isinstance(e, SchematicNetLabel)]
         
@@ -135,7 +161,7 @@ class KiCadWriter:
         # 2. Hierarchical Sheets (Boxes)
         sheet_boxes = [e for e in sheet_elements if isinstance(e, SchematicBox) and e.is_hierarchical_sheet]
         for box in sheet_boxes:
-            pins = [p for p in sheet_pins if p.schematic_box_id == box.schematic_box_id]
+            pins = [p for p in sheet_hier_pins if p.schematic_box_id == box.schematic_box_id]
             sch.args.append(self._write_hierarchical_sheet(box, pins))
 
         # 3. Component Instances
@@ -146,7 +172,8 @@ class KiCadWriter:
                 from circuitweaver.library.pinout import get_symbol_info
                 try:
                     symbol = get_symbol_info(source.symbol_id)
-                except Exception: pass
+                except Exception as e:
+                    logger.warning(f"Could not load symbol info for {source.symbol_id}: {e}")
             sch.args.append(self._write_component(comp, source_components, lib_id_to_lib_name, symbol))
 
         # 4. Traces & Junctions
@@ -159,8 +186,10 @@ class KiCadWriter:
                     point_counts[(int(round(edge.from_.x)), int(round(edge.from_.y)))] += 1
                     point_counts[(int(round(edge.to.x)), int(round(edge.to.y)))] += 1
         
-        for pin in sheet_pins:
+        for pin in sheet_hier_pins:
             point_counts[(int(round(pin.center.x)), int(round(pin.center.y)))] += 1
+        for port in sheet_ports:
+            point_counts[(int(round(port.center.x)), int(round(port.center.y)))] += 1
         for lbl in sheet_h_labels:
             point_counts[(int(round(lbl.center.x)), int(round(lbl.center.y)))] += 1
         for lbl in sheet_net_labels:
@@ -284,10 +313,13 @@ class KiCadWriter:
             lib_parts = lib_id.split(":", 1)
             if len(lib_parts) < 2: continue
             lib_name, sym_name = lib_parts
+            
             counter += 1
             embedded_name = f"Sym_{counter}"
             lib_id_to_lib_name[lib_id] = embedded_name
             try:
+                # Use the original sym_name for extraction, but rename it to embedded_name for the file
+                from circuitweaver.library.pinout import get_expanded_symbol_definition
                 symbol_def = get_expanded_symbol_definition(sym_name, library_name=lib_name, rename_to=embedded_name)
                 embedded_defs[embedded_name] = self._indent_sexp(symbol_def, indent=4)
             except Exception as e: logger.warning(f"Could not embed {lib_id}: {e}")
@@ -299,8 +331,10 @@ class KiCadWriter:
 
     def _write_component(self, comp: SchematicComponent, sources: Dict[str, SourceComponent], lib_id_to_lib_name: Dict[str, str], symbol: Optional[SymbolInfo] = None) -> SExp:
         source = sources.get(comp.source_component_id)
-        lib_id = self._resolve_lib_id(comp, source)
-        lib_name = lib_id_to_lib_name.get(lib_id, lib_id)
+        lib_id_orig = self._resolve_lib_id(comp, source)
+        # Use the mapped embedded name (Sym_N) as the lib_id for this instance
+        lib_id = lib_id_to_lib_name.get(lib_id_orig, lib_id_orig)
+        
         ref = source.name if source else "U?"
         val = source.display_value if source and source.display_value else (source.symbol_id if source else "")
         x = self._grid_to_mm(comp.center.x); y = self._grid_to_mm(comp.center.y)
@@ -308,7 +342,6 @@ class KiCadWriter:
         val_y = self._grid_to_mm(comp.center.y + 20)
         
         sexp = SExp("symbol",
-            SExp("lib_name", lib_name),
             SExp("lib_id", lib_id),
             SExp("at", x, y, comp.rotation),
             SExp("unit", 1),

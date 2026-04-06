@@ -1,7 +1,7 @@
 import json
 import pytest
 from pathlib import Path
-from circuitweaver.compiler.autolayout import AutoLayoutEngine
+from circuitweaver.compiler.layout import AutoLayoutEngine
 from circuitweaver.types.circuit_json import SourceComponent
 
 def test_autolayout_node_check():

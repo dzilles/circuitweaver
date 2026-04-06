@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-from circuitweaver.compiler.autolayout import AutoLayoutEngine
+from circuitweaver.compiler.layout import AutoLayoutEngine
 from circuitweaver.compiler.kicad_writer import KiCadWriter
 from circuitweaver.erc.checker import ERCChecker
 from circuitweaver.types.circuit_json import CircuitElement, SourceComponent

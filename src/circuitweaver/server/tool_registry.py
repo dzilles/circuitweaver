@@ -98,10 +98,11 @@ async def get_symbol_pins(symbol_id: str) -> str:
     Use this to look up pin numbers and names before creating source_port elements.
     """
     from circuitweaver.library import get_symbol_pinout as _get_pinout
+    from circuitweaver.types.errors import SymbolNotFoundError, LibraryNotFoundError
 
     try:
         pins = _get_pinout(symbol_id)
-    except ValueError as e:
+    except (ValueError, SymbolNotFoundError, LibraryNotFoundError) as e:
         return f"Error: {e}"
 
     if not pins:
@@ -132,10 +133,20 @@ async def validate_circuit_json(file_path: str) -> str:
     from circuitweaver.validator import validate_circuit_file as _validate
 
     path = Path(file_path)
-    if not path.exists():
+
+    # Basic path validation - resolve to absolute and check it exists
+    try:
+        resolved_path = path.resolve(strict=False)
+    except (OSError, ValueError) as e:
+        return f"Error: Invalid path: {e}"
+
+    if not resolved_path.exists():
         return f"Error: File not found: {file_path}"
 
-    result = _validate(path)
+    if not resolved_path.is_file():
+        return f"Error: Not a file: {file_path}"
+
+    result = _validate(resolved_path)
 
     if result.is_valid:
         msg = f"SUCCESS: {file_path} is valid"

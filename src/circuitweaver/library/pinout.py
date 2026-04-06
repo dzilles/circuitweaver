@@ -1,159 +1,285 @@
-"""Symbol pinout extraction for KiCad symbols."""
-
 import logging
 import re
-from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Any, List, NamedTuple, Optional, Union
 
-from circuitweaver.library.paths import get_library_paths
+import sexpdata
+from .paths import get_library_paths
+from circuitweaver.types.circuit_json import GridOffset, Point
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class GridOffset:
-    """X, Y offset in grid units."""
-
-    x: int
-    y: int
-
-
-@dataclass
-class PinInfo:
-    """Detailed information about a symbol pin."""
+class Pin(NamedTuple):
+    """Pin information from a KiCad symbol."""
 
     number: str
     name: str
     grid_offset: GridOffset
-    direction: str  # "left", "right", "up", "down"
-    electrical_type: str
+    direction: str
+    electrical_type: str = "passive"
 
 
-@dataclass
-class SymbolInfo:
-    """Detailed information about a KiCad symbol."""
+# Backward compatibility alias (deprecated - use Pin instead)
+PinInfo = Pin
 
+
+class SymbolInfo(NamedTuple):
     symbol_id: str
     name: str
-    pins: list[PinInfo]
+    pins: List[Pin]
     bounding_box_min: GridOffset
     bounding_box_max: GridOffset
 
     @property
     def width(self) -> int:
-        """Width in grid units."""
         return self.bounding_box_max.x - self.bounding_box_min.x
 
     @property
     def height(self) -> int:
-        """Height in grid units."""
         return self.bounding_box_max.y - self.bounding_box_min.y
 
 
-def get_symbol_pinout(symbol_id: str) -> list[PinInfo]:
-    """Get pin information for a KiCad symbol."""
+def get_symbol_pinout(symbol_id: str) -> List[Pin]:
+    """Backward compatibility wrapper."""
     info = get_symbol_info(symbol_id)
     return info.pins
 
 
+class SymbolAdapter:
+    """
+    Adapter for translating between KiCad S-expression data and SymbolInfo.
+    """
+
+    @staticmethod
+    def _is_symbol(item: Any, key: str) -> bool:
+        """Checks if an item is a sexpdata.Symbol matching the key."""
+        if isinstance(item, sexpdata.Symbol):
+            return item.value() == key
+        return str(item) == key
+
+    def _get_list(self, sexp: List[Any], key: str) -> Optional[List[Any]]:
+        """Finds a sub-list starting with the given key symbol."""
+        for item in sexp:
+            if isinstance(item, list) and len(item) > 0 and self._is_symbol(item[0], key):
+                return item
+        return None
+
+    def _get_all_lists(self, sexp: List[Any], key: str) -> List[List[Any]]:
+        """Finds all sub-lists starting with the given key symbol."""
+        return [item for item in sexp if isinstance(item, list) and len(item) > 0 and self._is_symbol(item[0], key)]
+
+    def _get_str(self, item: Any) -> str:
+        """Safely converts a sexpdata item (Symbol or string) to a string."""
+        if isinstance(item, sexpdata.Symbol):
+            return item.value()
+        return str(item)
+
+    def _find_all_recursive(self, sexp: List[Any], key: str) -> List[List[Any]]:
+        """Recursively finds all sub-lists starting with the given key symbol."""
+        results = []
+        if not isinstance(sexp, list) or not sexp:
+            return results
+        
+        if self._is_symbol(sexp[0], key):
+            results.append(sexp)
+        
+        for item in sexp:
+            if isinstance(item, list):
+                # Don't recurse into nested symbols if we are looking for 'symbol' blocks themselves
+                # but we DO want to recurse to find 'pin' or 'rectangle' inside 'symbol' blocks.
+                results.extend(self._find_all_recursive(item, key))
+        return results
+
+    def extract_pins(self, symbol_sexp: List[Any]) -> List[Pin]:
+        """Extracts pin information from a parsed symbol S-expression, including nested symbol blocks."""
+        pins = []
+        # KiCad pins are in (pin electrical_type graphical_style (at X Y ANGLE) ...)
+        # They can be at the top level of a symbol or inside nested symbol blocks (e.g. NAME_1_1)
+        for pin_sexp in self._find_all_recursive(symbol_sexp, "pin"):
+            elec_type = self._get_str(pin_sexp[1]) if len(pin_sexp) > 1 else "passive"
+            
+            at_list = self._get_list(pin_sexp, "at")
+            if not at_list or len(at_list) < 4:
+                continue
+            
+            x_mm, y_mm = float(at_list[1]), float(at_list[2])
+            angle = int(at_list[3])
+            
+            num_list = self._get_list(pin_sexp, "number")
+            number = self._get_str(num_list[1]) if num_list and len(num_list) > 1 else "?"
+            
+            name_list = self._get_list(pin_sexp, "name")
+            name = self._get_str(name_list[1]) if name_list and len(name_list) > 1 else "?"
+            
+            # Convert mm to grid units (1 grid = 0.127mm)
+            # Note: In symbols, Y goes UP. In schematics, Y goes DOWN. Negate Y.
+            grid_offset = GridOffset(x=int(round(x_mm / 0.127)), y=int(round(-y_mm / 0.127)))
+            
+            pins.append(Pin(
+                number=number, 
+                name=name, 
+                grid_offset=grid_offset, 
+                direction=self._angle_to_direction(angle),
+                electrical_type=elec_type
+            ))
+        return pins
+
+    def extract_graphic_bounds(self, symbol_sexp: List[Any]) -> Optional[tuple[float, float, float, float]]:
+        """Calculates bounding box of graphical elements in mm, including nested symbol blocks."""
+        xs, ys = [], []
+
+        # 1. Rectangles: (rectangle (start X Y) (end X Y))
+        for rect in self._find_all_recursive(symbol_sexp, "rectangle"):
+            start = self._get_list(rect, "start")
+            end = self._get_list(rect, "end")
+            if start and end:
+                xs.extend([float(start[1]), float(end[1])])
+                ys.extend([float(start[2]), float(end[2])])
+
+        # 2. Arcs: (arc (start X Y) (mid X Y) (end X Y))
+        for arc in self._find_all_recursive(symbol_sexp, "arc"):
+            start = self._get_list(arc, "start")
+            mid = self._get_list(arc, "mid")
+            end = self._get_list(arc, "end")
+            if start and mid and end:
+                xs.extend([float(start[1]), float(mid[1]), float(end[1])])
+                ys.extend([float(start[2]), float(mid[2]), float(end[2])])
+
+        # 3. Circles: (circle (center X Y) (radius R))
+        for circ in self._find_all_recursive(symbol_sexp, "circle"):
+            center = self._get_list(circ, "center")
+            radius_list = self._get_list(circ, "radius")
+            if center and radius_list:
+                cx, cy = float(center[1]), float(center[2])
+                r = float(radius_list[1])
+                xs.extend([cx - r, cx + r])
+                ys.extend([cy - r, cy + r])
+
+        # 4. Polylines: (polyline (pts (xy X Y) (xy X Y) ...))
+        for poly in self._find_all_recursive(symbol_sexp, "polyline"):
+            pts_list = self._get_list(poly, "pts")
+            if pts_list:
+                for xy in self._get_all_lists(pts_list, "xy"):
+                    xs.append(float(xy[1]))
+                    ys.append(float(xy[2]))
+
+        if not xs or not ys:
+            return None
+
+        return min(xs), max(xs), min(ys), max(ys)
+
+    def _angle_to_direction(self, angle: int) -> str:
+        if angle == 0: return "right"
+        if angle == 90: return "up"
+        if angle == 180: return "left"
+        if angle == 270: return "down"
+        return "right"
+
+
+@lru_cache(maxsize=128)
 def get_symbol_info(symbol_id: str) -> SymbolInfo:
-    """Extract full symbol information including bounding box."""
+    """
+    Retrieves information about a KiCad symbol, resolving inheritance.
+    """
+    lib_name, sym_name = symbol_id.split(":", 1)
     lib_paths = get_library_paths()
-    parts = symbol_id.split(":", 1)
-    if len(parts) < 2:
-        raise ValueError(f"Invalid symbol ID: {symbol_id}. Expected 'library:symbol'")
-
-    lib_name, sym_name = parts
     lib_file = lib_paths.symbols / f"{lib_name}.kicad_sym"
-
-    if not lib_file.exists():
-        raise ValueError(f"Library file not found: {lib_file}")
+    
+    if not lib_file.exists(): 
+        raise ValueError(f"Library file not found for {lib_name}")
 
     content = lib_file.read_text(errors="replace")
-    symbol_start = _find_symbol_start(content, sym_name)
-    if symbol_start == -1:
-        raise ValueError(f"Symbol '{sym_name}' not found in library '{lib_name}'")
-
-    symbol_content = _extract_balanced_sexp(content, symbol_start)
-    
-    # Check for extension: (extends "BASE_NAME")
-    extends_match = re.search(r'\(extends\s+"([^"]+)"\)', symbol_content)
-    if extends_match:
-        base_name = extends_match.group(1)
-        # Recursively get info for the base symbol
-        base_info = get_symbol_info(f"{lib_name}:{base_name}")
-        # Extract pins from the child as well (children can have their own pins)
-        child_pins = _extract_pins(symbol_content)
-        # Merge pins (keep unique by number)
-        all_pins = {p.number: p for p in base_info.pins}
-        for p in child_pins:
-            all_pins[p.number] = p
+    try:
+        lib_sexp = sexpdata.loads(content)
         
-        pins = list(all_pins.values())
-        graphics_content = symbol_content + "\n" + content[_find_symbol_start(content, base_name):_find_symbol_start(content, base_name)+2000] # Approximate
-        # Better: get full base content
-        base_start = _find_symbol_start(content, base_name)
-        base_full_content = _extract_balanced_sexp(content, base_start)
-        graphics_content = symbol_content + "\n" + base_full_content
-    else:
-        pins = _extract_pins(symbol_content)
-        graphics_content = symbol_content
+        adapter = SymbolAdapter()
+        if isinstance(lib_sexp, list) and len(lib_sexp) > 0 and adapter._is_symbol(lib_sexp[0], "kicad_symbol_lib"):
+            lib_sexp = lib_sexp[1:]
+    except Exception as e:
+        logger.error(f"Failed to parse S-Expression in {lib_file}: {e}")
+        raise ValueError(f"Malformed S-Expression in library '{lib_name}'") from e
 
-    # Extract graphics bounds
-    g_bounds = _extract_graphic_bounds(graphics_content)
+    # Find the symbol in the library
+    symbol_sexp = None
+    for item in lib_sexp:
+        if isinstance(item, list) and len(item) > 1 and adapter._is_symbol(item[0], "symbol"):
+            item_id = adapter._get_str(item[1])
+            if item_id == sym_name:
+                symbol_sexp = item
+                break
     
-    if g_bounds:
-        min_x_mm, max_x_mm, min_y_mm, max_y_mm = g_bounds
-        # Convert KiCad mm to our grid units (1 grid = 0.127mm)
-        # Note: In symbols, Y goes UP. In schematics, Y goes DOWN. Negate Y.
-        min_x = int(round(min_x_mm / 0.127))
-        max_x = int(round(max_x_mm / 0.127))
-        min_y = int(round(-max_y_mm / 0.127)) # max_y_mm is top, so it becomes min_y in grid
-        max_y = int(round(-min_y_mm / 0.127)) # min_y_mm is bottom, so it becomes max_y in grid
-    elif pins:
-        min_x = min(p.grid_offset.x for p in pins)
-        max_x = max(p.grid_offset.x for p in pins)
-        min_y = min(p.grid_offset.y for p in pins)
-        max_y = max(p.grid_offset.y for p in pins)
+    if not symbol_sexp:
+        raise ValueError(f"Symbol '{sym_name}' not found in library '{lib_name}'")
+    
+    # Handle Inheritance (extends "...")
+    extends_list = adapter._get_list(symbol_sexp, "extends")
+    pins = []
+    graphic_bounds = None
+    
+    if extends_list and len(extends_list) > 1:
+        base_name = adapter._get_str(extends_list[1])
+        base_sexp = None
+        for item in lib_sexp:
+            if isinstance(item, list) and len(item) > 1 and adapter._is_symbol(item[0], "symbol"):
+                item_id = adapter._get_str(item[1])
+                if item_id == base_name:
+                    base_sexp = item
+                    break
+        
+        if not base_sexp:
+            raise ValueError(f"Base symbol '{base_name}' not found for '{sym_name}'")
+        
+        # Merge pins and graphics from base
+        pins = adapter.extract_pins(base_sexp)
+        graphic_bounds = adapter.extract_graphic_bounds(base_sexp)
+        
+        # Overlay pins/graphics from the inheriting symbol if present
+        local_pins = adapter.extract_pins(symbol_sexp)
+        if local_pins:
+            # We merge pins for KiCad inheritance if local pins exist
+            # (Though usually KiCad replaces the whole pin set if it defines any)
+            # For now, let's keep the local ones if they exist, otherwise base.
+            pins = local_pins
+            
+        local_bounds = adapter.extract_graphic_bounds(symbol_sexp)
+        if local_bounds:
+            if graphic_bounds:
+                graphic_bounds = (
+                    min(graphic_bounds[0], local_bounds[0]),
+                    max(graphic_bounds[1], local_bounds[1]),
+                    min(graphic_bounds[2], local_bounds[2]),
+                    max(graphic_bounds[3], local_bounds[3])
+                )
+            else:
+                graphic_bounds = local_bounds
     else:
-        return SymbolInfo(
-            symbol_id=symbol_id, name=sym_name, pins=[],
-            bounding_box_min=GridOffset(0, 0), bounding_box_max=GridOffset(40, 40),
-        )
+        pins = adapter.extract_pins(symbol_sexp)
+        graphic_bounds = adapter.extract_graphic_bounds(symbol_sexp)
 
-    # Return tight bounding box (no padding)
+    # Calculate final bounding box in grid units
+    xs, ys = [], []
+    if graphic_bounds:
+        min_x_mm, max_x_mm, min_y_mm, max_y_mm = graphic_bounds
+        xs.extend([int(round(min_x_mm / 0.127)), int(round(max_x_mm / 0.127))])
+        # Note: Negate Y for schematic coordinates
+        ys.extend([int(round(-max_y_mm / 0.127)), int(round(-min_y_mm / 0.127))])
+
+    for p in pins:
+        xs.append(p.grid_offset.x)
+        ys.append(p.grid_offset.y)
+
+    if not xs or not ys:
+        raise ValueError(f"Symbol '{symbol_id}' has no geometry or pins.")
+
     return SymbolInfo(
         symbol_id=symbol_id,
         name=sym_name,
         pins=pins,
-        bounding_box_min=GridOffset(min_x, min_y),
-        bounding_box_max=GridOffset(max_x, max_y),
+        bounding_box_min=GridOffset(x=min(xs), y=min(ys)),
+        bounding_box_max=GridOffset(x=max(xs), y=max(ys)),
     )
-
-
-def _extract_graphic_bounds(symbol_content: str) -> tuple[float, float, float, float] | None:
-    """Extract the min_x, max_x, min_y, max_y in mm from symbol graphics."""
-    xs, ys = [], []
-
-    # 1. Rectangles: (rectangle (start X Y) (end X Y))
-    for match in re.finditer(r'\(rectangle\s+\(start\s+([-\d.]+)\s+([-\d.]+)\)\s+\(end\s+([-\d.]+)\s+([-\d.]+)\)', symbol_content):
-        xs.extend([float(match.group(1)), float(match.group(3))])
-        ys.extend([float(match.group(2)), float(match.group(4))])
-
-    # 2. Polylines/Polygons: extract any (xy X Y) points
-    for match in re.finditer(r'\(xy\s+([-\d.]+)\s+([-\d.]+)\)', symbol_content):
-        xs.append(float(match.group(1)))
-        ys.append(float(match.group(2)))
-
-    # 3. Circles: (circle (center X Y) (radius R))
-    for match in re.finditer(r'\(circle\s+\(center\s+([-\d.]+)\s+([-\d.]+)\)\s+\(radius\s+([-\d.]+)\)', symbol_content):
-        cx, cy, r = float(match.group(1)), float(match.group(2)), float(match.group(3))
-        xs.extend([cx - r, cx + r])
-        ys.extend([cy - r, cy + r])
-
-    if not xs or not ys: return None
-    return min(xs), max(xs), min(ys), max(ys)
 
 
 def _find_symbol_start(content: str, symbol_name: str) -> int:
@@ -181,66 +307,8 @@ def _extract_balanced_sexp(content: str, start_pos: int) -> str:
     return content[start_pos:]
 
 
-def _extract_pins(symbol_content: str) -> list[PinInfo]:
-    pins: list[PinInfo] = []
-    # Match (pin ELECTRICAL_TYPE GRAPHIC_TYPE (at X Y ANGLE) ... (name "NAME" ...) (number "NUMBER" ...))
-    # Note: ELECTRICAL_TYPE can be quoted or unquoted.
-    pin_pattern = re.compile(r'\(pin\s+([^\s\)]+)\s+([^\s\)]+)', re.DOTALL)
-    
-    # Iterate through the content to find ALL pins, including those in nested (symbol ...) blocks
-    pos = 0
-    while True:
-        match = pin_pattern.search(symbol_content, pos)
-        if not match:
-            break
-        
-        start_idx = match.start()
-        # Extract the full pin block to find name/number within it
-        pin_block = _extract_balanced_sexp(symbol_content, start_idx)
-        pos = start_idx + len(pin_block)
-        
-        electrical_type = match.group(1).strip('"')
-        
-        at_match = re.search(r'\(at\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)', pin_block)
-        if not at_match:
-            continue
-            
-        x_mm = float(at_match.group(1))
-        y_mm = float(at_match.group(2))
-        angle = float(at_match.group(3))
-        
-        name_match = re.search(r'\(name\s+"([^"]*)"', pin_block)
-        name = name_match.group(1) if name_match else ""
-        
-        num_match = re.search(r'\(number\s+"([^"]*)"', pin_block)
-        number = num_match.group(1) if num_match else ""
-        
-        # Convert KiCad mm to our grid units (1 grid = 0.127mm)
-        # Note: In KiCad symbol files, Y goes UP. In schematics, Y goes DOWN. Negate Y.
-        grid_x = int(round(x_mm / 0.127))
-        grid_y = int(round(-y_mm / 0.127))
-        
-        pins.append(PinInfo(
-            number=number,
-            name=name,
-            grid_offset=GridOffset(grid_x, grid_y),
-            direction=_angle_to_direction(angle),
-            electrical_type=electrical_type
-        ))
-        
-    return pins
-
-
-def _angle_to_direction(angle: float) -> str:
-    angle = angle % 360
-    if angle == 0: return "right"
-    if angle == 90: return "up"
-    if angle == 180: return "left"
-    if angle == 270: return "down"
-    return "right"
-
-
-def get_expanded_symbol_definition(symbol_name: str, library_name: str, rename_to: Optional[str] = None) -> str:
+@lru_cache(maxsize=128)
+def get_expanded_symbol_definition(symbol_id: str, library_name: str, rename_to: Optional[str] = None) -> str:
     """Get the full symbol definition for embedding, recursively handling extensions."""
     lib_paths = get_library_paths()
     lib_file = lib_paths.symbols / f"{library_name}.kicad_sym"
@@ -248,13 +316,14 @@ def get_expanded_symbol_definition(symbol_name: str, library_name: str, rename_t
         raise ValueError(f"Library not found: {library_name}")
     
     content = lib_file.read_text(errors="replace")
+    # symbol_id might be "Lib:Name", we want "Name" for searching in the library file
+    symbol_name = symbol_id.split(":")[-1] if ":" in symbol_id else symbol_id
+    
     symbol_start = _find_symbol_start(content, symbol_name)
     if symbol_start == -1: 
         raise ValueError(f"Symbol {symbol_name} not found in {library_name}")
     
     symbol_def = _extract_balanced_sexp(content, symbol_start)
-    
-    result_defs = []
     
     # Check for extension: (extends "BASE_NAME")
     extends_match = re.search(r'\(extends\s+"([^"]+)"\)', symbol_def)
@@ -267,7 +336,6 @@ def get_expanded_symbol_definition(symbol_name: str, library_name: str, rename_t
         symbol_def = symbol_def.replace(extends_match.group(0), "")
         
         # Extract the content from the base symbol (everything between first (symbol "NAME" ...) and last )
-        # We use a balanced paren approach to find the main base block
         base_start = base_def.find('(')
         if base_start != -1:
             base_inner = _extract_balanced_sexp(base_def, base_start)
@@ -277,22 +345,20 @@ def get_expanded_symbol_definition(symbol_name: str, library_name: str, rename_t
                 base_content = inner_match.group(1)
                 
                 # Rename the base_name prefixes to symbol_name in base_content
-                # so that they match the child symbol name before applying rename_to.
                 base_content = base_content.replace(f'"{base_name}_', f'"{symbol_name}_')
                 base_content = base_content.replace(f'"{base_name}"', f'"{symbol_name}"')
                 
                 # Merge into child: Find the index of the LAST closing paren
-                # Since symbol_def was returned by _extract_balanced_sexp, it's a single block.
                 last_paren_idx = symbol_def.rfind(')')
                 if last_paren_idx != -1:
                     symbol_def = symbol_def[:last_paren_idx] + "\n    " + base_content + "\n  )"
 
     if rename_to:
-        # 1. Rename the main symbol definition
-        symbol_def = re.sub(rf'\(symbol\s+"{re.escape(symbol_name)}"', f'(symbol "{rename_to}"', symbol_def)
-        # 2. Rename all references to this name within the block (e.g. nested unit symbols)
+        # Rename the main symbol and ALL internal references (units, etc)
+        # We use a greedy replace for the name but ensure we don't hit parts of other tokens
         symbol_def = symbol_def.replace(f'"{symbol_name}"', f'"{rename_to}"')
-        # 3. Rename any prefixed children
         symbol_def = symbol_def.replace(f'"{symbol_name}_', f'"{rename_to}_')
+        # Also catch the case where the name might be used in a property without quotes (rare but possible)
+        symbol_def = re.sub(rf'\(symbol\s+"?{re.escape(symbol_name)}"?', f'(symbol "{rename_to}"', symbol_def)
     
     return symbol_def
