@@ -253,7 +253,8 @@ class LayoutToSchematicTransform:
             y=snapped_y,
             width=box_width,
             height=box_height,
-            is_hierarchical_sheet=group.is_subcircuit,
+            is_hierarchical_sheet=bool(group.is_subcircuit),
+            child_sheet_id=group.subcircuit_id if group.is_subcircuit else None,
             name=group.name,
         ))
 

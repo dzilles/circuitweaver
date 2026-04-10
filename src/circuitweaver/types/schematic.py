@@ -95,6 +95,7 @@ class SchematicBox(SchematicElementBase):
     width: float
     height: float
     is_hierarchical_sheet: bool = Field(default=False)
+    child_sheet_id: Optional[str] = None
     name: Optional[str] = None
 
     # Offsets for Sheetname and Sheetfile properties relative to (x, y)

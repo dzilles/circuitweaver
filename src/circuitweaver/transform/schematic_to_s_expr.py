@@ -177,7 +177,7 @@ class SchematicToSExprTransform:
         w = self._grid_to_mm(box.width)
         h = self._grid_to_mm(box.height)
         sheet_name = box.name or box.schematic_box_id
-        file_name = f"{box.schematic_box_id.replace('box_', '')}.kicad_sch"
+        file_name = f"{box.child_sheet_id}.kicad_sch" if box.child_sheet_id else f"{box.schematic_box_id.replace('box_', '')}.kicad_sch"
 
         x_mid_mm = self._grid_to_mm(box.x + box.width / 2)
         ny_mm = self._grid_to_mm(box.y + box.name_offset.y)

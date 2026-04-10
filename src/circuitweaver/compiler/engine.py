@@ -159,7 +159,9 @@ class CompileEngine:
         element_to_sheet, element_to_group = self._map_elements(
             source_components, source_groups, source_ports
         )
-        subcircuit_ids = {g.source_group_id for g in source_groups if g.is_subcircuit}
+        
+        # Use subcircuit_id for sheet IDs, matching _map_elements
+        subcircuit_ids = {g.subcircuit_id for g in source_groups if g.is_subcircuit and g.subcircuit_id}
         all_sheet_ids = {"root"} | subcircuit_ids
         symbol_map = self._load_symbols(source_components)
 
@@ -268,13 +270,17 @@ class CompileEngine:
         group_map = {g.source_group_id: g for g in groups}
 
         def get_owner_sheet(gid: Optional[str]) -> str:
+            """Recursively find the subcircuit_id that owns this group."""
             if not gid or gid not in group_map:
                 return "root"
             g = group_map[gid]
-            return g.source_group_id if g.is_subcircuit else get_owner_sheet(g.parent_source_group_id)
+            if g.is_subcircuit and g.subcircuit_id:
+                return g.subcircuit_id
+            return get_owner_sheet(g.parent_source_group_id)
 
         for c in components:
             pid = c.source_group_id or c.subcircuit_id
+            # Resolve subcircuit_id to source_group_id if needed
             if pid and pid not in group_map:
                 match = next((g for g in groups if g.subcircuit_id == pid), None)
                 if match:
@@ -282,15 +288,17 @@ class CompileEngine:
 
             sheet = get_owner_sheet(pid)
             element_to_sheet[c.source_component_id] = sheet
-            element_to_group[c.source_component_id] = pid or "root"
+            element_to_group[c.source_component_id] = pid or sheet
 
             for p in ports:
                 if p.source_component_id == c.source_component_id:
                     element_to_sheet[p.source_port_id] = sheet
 
         for g in groups:
-            element_to_sheet[g.source_group_id] = get_owner_sheet(g.parent_source_group_id)
-            element_to_group[g.source_group_id] = g.parent_source_group_id or "root"
+            # A group's owner sheet is determined by its parent
+            sheet = get_owner_sheet(g.parent_source_group_id)
+            element_to_sheet[g.source_group_id] = sheet
+            element_to_group[g.source_group_id] = g.parent_source_group_id or sheet
 
         return element_to_sheet, element_to_group
 
