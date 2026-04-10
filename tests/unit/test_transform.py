@@ -760,3 +760,18 @@ class TestTransformHierarchy:
         inner_box = outer_box.find_node("box_inner")
         assert inner_box is not None
         assert inner_box.find_node("R1") is not None
+
+    def test_subgroup_is_not_hierarchical_sheet(self):
+        """Test that a subgroup (is_subcircuit=False) results in a non-hierarchical SchematicBox."""
+        # 1. Source → Layout
+        transform = SourceToLayoutTransform()
+        group = SourceGroup(source_group_id="g1", is_subcircuit=False)
+        layout, registry = transform.transform("root", [group])
+        
+        # 2. Layout → Schematic
+        sch_transform = LayoutToSchematicTransform()
+        schematic_elements = sch_transform.transform("root", layout, registry, [group])
+        
+        boxes = [e for e in schematic_elements if isinstance(e, SchematicBox)]
+        assert len(boxes) == 1
+        assert boxes[0].is_hierarchical_sheet is False

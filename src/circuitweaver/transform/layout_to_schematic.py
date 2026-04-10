@@ -253,7 +253,8 @@ class LayoutToSchematicTransform:
             y=snapped_y,
             width=box_width,
             height=box_height,
-            is_hierarchical_sheet=True,
+            is_hierarchical_sheet=group.is_subcircuit,
+            name=group.name,
         ))
 
     def _process_edges(
