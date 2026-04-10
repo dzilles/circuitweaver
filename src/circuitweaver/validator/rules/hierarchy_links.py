@@ -2,11 +2,10 @@
 
 from typing import Any
 
-from circuitweaver.types.circuit_json import (
+from circuitweaver.types import (
     CircuitElement,
     SchematicComponent,
     SchematicNetLabel,
-    SchematicSheet,
 )
 from circuitweaver.validator.result import ValidationResult
 from circuitweaver.validator.rules.base import ValidationRule

@@ -6,7 +6,7 @@ from typing import Any, List, NamedTuple, Optional, Union
 
 import sexpdata
 from .paths import get_library_paths
-from circuitweaver.types.circuit_json import GridOffset, Point
+from circuitweaver.types import GridOffset, Point
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +19,6 @@ class Pin(NamedTuple):
     grid_offset: GridOffset
     direction: str
     electrical_type: str = "passive"
-
-
-# Backward compatibility alias (deprecated - use Pin instead)
-PinInfo = Pin
 
 
 class SymbolInfo(NamedTuple):
@@ -39,12 +35,6 @@ class SymbolInfo(NamedTuple):
     @property
     def height(self) -> int:
         return self.bounding_box_max.y - self.bounding_box_min.y
-
-
-def get_symbol_pinout(symbol_id: str) -> List[Pin]:
-    """Backward compatibility wrapper."""
-    info = get_symbol_info(symbol_id)
-    return info.pins
 
 
 class SymbolAdapter:

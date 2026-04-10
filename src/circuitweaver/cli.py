@@ -75,8 +75,8 @@ def compile(file_path: str, output_dir: str, name: str):
     from pydantic import TypeAdapter
     from rich.progress import Progress, SpinnerColumn, TextColumn
 
-    from circuitweaver.compiler.compiler import Compiler
-    from circuitweaver.types.circuit_json import CircuitElement
+    from circuitweaver.compiler import CompileEngine
+    from circuitweaver.types import CircuitElement
 
     console.print(f"[bold blue]Compiling[/bold blue] {file_path}...")
 
@@ -87,7 +87,7 @@ def compile(file_path: str, output_dir: str, name: str):
         adapter = TypeAdapter(list[CircuitElement])
         elements = adapter.validate_python(data)
 
-        compiler = Compiler()
+        engine = CompileEngine()
         out_path = Path(output_dir)
 
         with Progress(
@@ -97,9 +97,8 @@ def compile(file_path: str, output_dir: str, name: str):
         ) as progress:
             progress.add_task(description="Running layout and writing KiCad files...", total=None)
 
-            # Run layout and write files
-            layout_elements = compiler.layout_engine.layout(elements)
-            sch_file = compiler.compile(layout_elements, out_path, project_name=name)
+            # Compile (auto-runs layout if needed)
+            sch_file = engine.compile(elements, out_path, project_name=name)
 
         console.print(f"\n[bold green]SUCCESS:[/bold green] Compiled to [cyan]{sch_file}[/cyan]")
 
@@ -177,10 +176,10 @@ def search(query: str, limit: int) -> None:
 @click.argument("symbol_id", type=str)
 def pins(symbol_id: str) -> None:
     """Get pin information for a KiCad symbol."""
-    from circuitweaver.library import get_symbol_pinout
+    from circuitweaver.library import get_symbol_info
 
     try:
-        pin_list = get_symbol_pinout(symbol_id)
+        symbol_info = get_symbol_info(symbol_id)
     except ValueError as e:
         error_console.print(f"[bold red]Error:[/bold red] {e}")
         sys.exit(1)
@@ -190,7 +189,7 @@ def pins(symbol_id: str) -> None:
     table.add_column("Name")
     table.add_column("Type")
 
-    for pin in pin_list:
+    for pin in symbol_info.pins:
         table.add_row(
             str(pin.number),
             pin.name,
@@ -221,10 +220,11 @@ def pins(symbol_id: str) -> None:
 )
 def serve(transport: str, port: int, host: str) -> None:
     """Run the MCP server."""
-    from circuitweaver.server.mcp_server import run_server
+    from circuitweaver.server.mcp_server import create_server, run_server
 
-    console.print(f"[bold blue]Starting CircuitWeaver MCP server ({transport})...[/bold blue]")
-    run_server(transport=transport, port=port, host=host)
+    error_console.print(f"[bold blue]Starting CircuitWeaver MCP server ({transport})...[/bold blue]")
+    server = create_server()
+    run_server(server, transport=transport, port=port, host=host)
 
 
 @main.command()

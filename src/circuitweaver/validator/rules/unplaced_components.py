@@ -2,7 +2,7 @@
 
 from typing import Any, Set
 
-from circuitweaver.types.circuit_json import (
+from circuitweaver.types import (
     CircuitElement,
     SchematicComponent,
     SourceComponent,

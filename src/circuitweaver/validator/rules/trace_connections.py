@@ -3,7 +3,7 @@
 from collections import defaultdict
 from typing import Any
 
-from circuitweaver.types.circuit_json import (
+from circuitweaver.types import (
     CircuitElement,
     SourceTrace,
 )

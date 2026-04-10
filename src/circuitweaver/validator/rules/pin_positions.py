@@ -3,8 +3,8 @@
 import logging
 from typing import Any
 
-from circuitweaver.library.pinout import get_symbol_pinout, PinInfo
-from circuitweaver.types.circuit_json import (
+from circuitweaver.library.pinout import get_symbol_info, Pin
+from circuitweaver.types import (
     CircuitElement,
     SchematicComponent,
     SchematicPort,
@@ -75,7 +75,7 @@ class PinPositionsRule(ValidationRule):
 
             # Get actual pin positions from library
             try:
-                pin_infos = get_symbol_pinout(symbol_id)
+                pin_infos = get_symbol_info(symbol_id).pins
             except ValueError as e:
                 logger.warning(f"Could not get pinout for {symbol_id}: {e}")
                 continue
@@ -119,7 +119,7 @@ class PinPositionsRule(ValidationRule):
 
     def _compute_actual_positions(
         self,
-        pins: list[PinInfo],
+        pins: list[Pin],
         center_x: int,
         center_y: int,
         rotation: int,

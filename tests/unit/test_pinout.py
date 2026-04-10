@@ -1,6 +1,6 @@
 import pytest
 from circuitweaver.library.pinout import get_symbol_info, SymbolAdapter
-from circuitweaver.types.circuit_json import GridOffset
+from circuitweaver.types import GridOffset
 
 def test_get_symbol_info_resistor():
     """Test that a standard resistor symbol has non-zero dimensions from graphics."""

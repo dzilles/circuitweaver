@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict, Set
 
-from circuitweaver.types.circuit_json import (
+from circuitweaver.types import (
     CircuitElement,
     SchematicComponent,
     SchematicNoConnect,
@@ -77,12 +77,12 @@ class UnconnectedPinsRule(ValidationRule):
 
         # PHASE 1: Check that all pins from symbol are defined as ports
         try:
-            from circuitweaver.library.pinout import get_symbol_pinout
+            from circuitweaver.library.pinout import get_symbol_info
         except ImportError:
             logger.warning("Could not import pinout module, skipping pin definition check")
-            get_symbol_pinout = None
+            get_symbol_info = None
 
-        if get_symbol_pinout:
+        if get_symbol_info:
             for comp_id, comp in components.items():
                 # Skip hierarchy blocks
                 if comp.source_component_id.startswith("hierarchy:"):
@@ -94,7 +94,7 @@ class UnconnectedPinsRule(ValidationRule):
                     continue
 
                 try:
-                    pins = get_symbol_pinout(symbol_id)
+                    pins = get_symbol_info(symbol_id).pins
                 except ValueError as e:
                     # Symbol not found - already reported by PinPositionsRule
                     logger.debug(f"Could not get pinout for {symbol_id}: {e}")

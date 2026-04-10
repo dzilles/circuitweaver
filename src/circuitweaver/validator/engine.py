@@ -7,16 +7,14 @@ from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
-from circuitweaver.types.circuit_json import (
+from circuitweaver.io import (
+    parse_element,
+    get_element_id_from_raw,
+)
+from circuitweaver.types import (
     CircuitElement,
-    SchematicBox,
     SchematicComponent,
-    SchematicHierarchicalLabel,
-    SchematicHierarchicalPin,
-    SchematicNetLabel,
-    SchematicNoConnect,
     SchematicPort,
-    SchematicText,
     SchematicTrace,
     SourceComponent,
     SourceGroup,
@@ -92,7 +90,7 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
             continue
 
         try:
-            element = _parse_element(raw_element)
+            element = parse_element(raw_element)
             elements.append(element)
         except PydanticValidationError as e:
             for error in e.errors():
@@ -100,7 +98,7 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
                 result.add_error(
                     "schema",
                     f"Element {i}: {loc} - {error['msg']}",
-                    element_id=_get_element_id_from_raw(raw_element),
+                    element_id=get_element_id_from_raw(raw_element),
                 )
         except ValueError as e:
             result.add_error("schema", f"Element {i}: {e}")
@@ -119,60 +117,6 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
         result.merge(rule_result)
 
     return result
-
-
-def _parse_element(raw: dict[str, Any]) -> CircuitElement:
-    """Parse a raw dict into a CircuitElement."""
-    element_type = raw.get("type")
-
-    type_map = {
-        "source_component": SourceComponent,
-        "source_port": SourcePort,
-        "source_net": SourceNet,
-        "source_trace": SourceTrace,
-        "source_group": SourceGroup,
-        "schematic_component": SchematicComponent,
-        "schematic_port": SchematicPort,
-        "schematic_trace": SchematicTrace,
-        "schematic_box": SchematicBox,
-        "schematic_net_label": SchematicNetLabel,
-        "schematic_hierarchical_pin": SchematicHierarchicalPin,
-        "schematic_hierarchical_label": SchematicHierarchicalLabel,
-        "schematic_text": SchematicText,
-        "schematic_no_connect": SchematicNoConnect,
-    }
-
-    if element_type not in type_map:
-        valid_types = ", ".join(sorted(type_map.keys()))
-        raise ValueError(
-            f"Unknown element type: '{element_type}'. "
-            f"Valid types are: {valid_types}."
-        )
-
-    return type_map[element_type].model_validate(raw)
-
-
-def _get_element_id_from_raw(raw: dict[str, Any]) -> str | None:
-    """Extract element ID from raw dict."""
-    for key in [
-        "source_component_id",
-        "source_port_id",
-        "source_net_id",
-        "source_trace_id",
-        "source_group_id",
-        "schematic_component_id",
-        "schematic_port_id",
-        "schematic_trace_id",
-        "schematic_box_id",
-        "schematic_net_label_id",
-        "schematic_hierarchical_pin_id",
-        "schematic_hierarchical_label_id",
-        "schematic_text_id",
-        "schematic_no_connect_id",
-    ]:
-        if key in raw:
-            return raw[key]
-    return None
 
 
 def _build_validation_context(elements: list[CircuitElement]) -> dict[str, Any]:

@@ -97,11 +97,11 @@ async def get_symbol_pins(symbol_id: str) -> str:
 
     Use this to look up pin numbers and names before creating source_port elements.
     """
-    from circuitweaver.library import get_symbol_pinout as _get_pinout
+    from circuitweaver.library import get_symbol_info
     from circuitweaver.types.errors import SymbolNotFoundError, LibraryNotFoundError
 
     try:
-        pins = _get_pinout(symbol_id)
+        pins = get_symbol_info(symbol_id).pins
     except (ValueError, SymbolNotFoundError, LibraryNotFoundError) as e:
         return f"Error: {e}"
 
@@ -166,6 +166,90 @@ async def validate_circuit_json(file_path: str) -> str:
         return msg
 
 
+async def create_schematic(file_path: str, debug: bool = False) -> str:
+    """Run auto-layout on a Circuit JSON file to generate schematic elements."""
+    from pathlib import Path
+
+    from circuitweaver.compiler.engine import CompileEngine
+    from circuitweaver.io.json import read_circuit, write_schematic
+
+    path = Path(file_path)
+    if not path.exists():
+        return f"Error: File not found: {file_path}"
+
+    try:
+        elements = read_circuit(path)
+        engine = CompileEngine()
+
+        # Run layout with optional debug info
+        debug_dir = path.parent if debug else None
+        debug_basename = path.stem if debug else None
+
+        updated_elements = engine.layout(
+            elements, debug_dir=debug_dir, debug_basename=debug_basename
+        )
+
+        # Write only the schematic elements to a separate file
+        schematic_path = path.parent / f"{path.stem}_schematic.json"
+        write_schematic(schematic_path, updated_elements)
+
+        # Generate KiCad files in the same directory
+        engine.compile(updated_elements, path.parent, project_name=path.stem)
+
+        msg = f"SUCCESS: Generated schematic files in {path.parent}:\n"
+        msg += f"- {schematic_path.name} (Circuit JSON visual elements)\n"
+        msg += f"- {path.stem}.kicad_sch (KiCad schematic)\n"
+        msg += f"- {path.stem}.kicad_pro (KiCad project)\n"
+
+        if debug:
+            msg += f"- {path.stem}_layout_in.json (ELK input graph)\n"
+            msg += f"- {path.stem}_layout_out.json (ELK output graph)\n"
+
+        return msg
+    except Exception as e:
+        return f"Error creating schematic: {e}"
+
+
+async def run_erc(file_path: str) -> str:
+    """Run Electrical Rules Check (ERC) on a Circuit JSON file."""
+    import tempfile
+    from pathlib import Path
+
+    from circuitweaver.compiler.engine import CompileEngine
+    from circuitweaver.io.json import read_circuit
+
+    path = Path(file_path)
+    if not path.exists():
+        return f"Error: File not found: {file_path}"
+
+    try:
+        elements = read_circuit(path)
+        engine = CompileEngine()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            # Compile to temporary KiCad files
+            root_sch = engine.compile(elements, tmp_path, project_name="erc_temp")
+            # Run ERC on the root schematic
+            result = engine.run_erc(root_sch)
+
+        if result["is_valid"]:
+            msg = f"SUCCESS: ERC passed for {file_path}"
+        else:
+            msg = f"FAILED: ERC found {len(result['errors'])} error(s) in {file_path}"
+            for e in result["errors"]:
+                msg += f"\n- {e}"
+
+        if result.get("warnings"):
+            msg += f"\n\nWarnings ({len(result['warnings'])}):"
+            for w in result["warnings"]:
+                msg += f"\n- {w}"
+
+        return msg
+    except Exception as e:
+        return f"Error running ERC: {e}"
+
+
 # =============================================================================
 # Tool Registry
 # =============================================================================
@@ -213,5 +297,36 @@ TOOL_REGISTRY: dict[str, ToolHandler] = {
             ),
         ],
         handler=validate_circuit_json,
+    ),
+    "create_schematic": ToolHandler(
+        name="create_schematic",
+        description="Run auto-layout on a Circuit JSON file to generate schematic elements. Positions components and routes traces.",
+        parameters=[
+            ToolParameter(
+                name="file_path",
+                type="string",
+                description="Path to the Circuit JSON file",
+            ),
+            ToolParameter(
+                name="debug",
+                type="boolean",
+                description="Optional: If true, generates intermediate layout data files (e.g. ELK inputs/outputs) for debugging.",
+                required=False,
+                default=False,
+            ),
+        ],
+        handler=create_schematic,
+    ),
+    "run_erc": ToolHandler(
+        name="run_erc",
+        description="Run Electrical Rules Check (ERC) on a Circuit JSON file. Requires schematic elements to be present (run create_schematic first).",
+        parameters=[
+            ToolParameter(
+                name="file_path",
+                type="string",
+                description="Path to the Circuit JSON file",
+            ),
+        ],
+        handler=run_erc,
     ),
 }

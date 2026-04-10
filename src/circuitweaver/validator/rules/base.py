@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from circuitweaver.types.circuit_json import CircuitElement
+from circuitweaver.types import CircuitElement
 from circuitweaver.validator.result import ValidationResult
 
 

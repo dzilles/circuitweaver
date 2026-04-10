@@ -3,7 +3,7 @@
 __version__ = "0.2.0"
 __author__ = "CircuitWeaver Contributors"
 
-from circuitweaver.types.circuit_json import (
+from circuitweaver.types import (
     CircuitElement,
     SourceComponent,
     SourceGroup,

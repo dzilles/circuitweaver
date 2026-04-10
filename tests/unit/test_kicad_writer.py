@@ -1,9 +1,10 @@
-"""Tests for the KiCad schematic writer."""
+"""Tests for S-expression serialization and KiCad schematic generation."""
 
 import pytest
 
-from circuitweaver.compiler.kicad_writer import KiCadWriter, SExp, RawString, GRID_TO_MM
-from circuitweaver.types.circuit_json import (
+from circuitweaver.types.s_expr import SExpr, RawString, serialize
+from circuitweaver.transform.schematic_to_s_expr import SchematicToSExprTransform, GRID_TO_MM
+from circuitweaver.types import (
     Point,
     SchematicComponent,
     SchematicTrace,
@@ -14,95 +15,95 @@ from circuitweaver.types.circuit_json import (
 )
 
 
-class TestSExp:
+class TestSExpr:
     """Tests for S-Expression builder."""
 
     def test_empty_sexp(self):
         """Test serializing an empty S-expression."""
-        sexp = SExp("empty")
-        assert sexp.serialize() == "(empty)"
+        sexp = SExpr("empty")
+        assert serialize(sexp) == "(empty)"
 
     def test_simple_sexp_with_args(self):
         """Test serializing S-expression with simple arguments."""
         # Note: digit-only strings get quoted per KiCad S-expression rules
-        sexp = SExp("at", 10, 20, 0)
-        result = sexp.serialize()
+        sexp = SExpr("at", 10, 20, 0)
+        result = serialize(sexp)
         assert result == "(at 10 20 0)"
 
     def test_sexp_with_numeric_args(self):
         """Test serializing S-expression with numeric arguments."""
-        sexp = SExp("size", 1.27, 1.27)
-        result = sexp.serialize()
+        sexp = SExpr("size", 1.27, 1.27)
+        result = serialize(sexp)
         assert "(size 1.27 1.27)" in result
 
     def test_sexp_with_boolean_args(self):
         """Test serializing S-expression with boolean arguments."""
-        sexp = SExp("in_bom", True)
-        result = sexp.serialize()
+        sexp = SExpr("in_bom", True)
+        result = serialize(sexp)
         assert "yes" in result
 
-        sexp_false = SExp("dnp", False)
-        result_false = sexp_false.serialize()
+        sexp_false = SExpr("dnp", False)
+        result_false = serialize(sexp_false)
         assert "no" in result_false
 
     def test_nested_sexp(self):
         """Test serializing nested S-expressions."""
-        inner = SExp("font", SExp("size", 1.27, 1.27))
-        outer = SExp("effects", inner)
-        result = outer.serialize()
+        inner = SExpr("font", SExpr("size", 1.27, 1.27))
+        outer = SExpr("effects", inner)
+        result = serialize(outer)
         assert "(effects" in result
         assert "(font" in result
         assert "(size 1.27 1.27)" in result
 
     def test_sexp_quoting_special_chars(self):
         """Test that special characters trigger quoting."""
-        sexp = SExp("property", "Reference", "U1")
-        result = sexp.serialize()
+        sexp = SExpr("property", "Reference", "U1")
+        result = serialize(sexp)
         # "Reference" should be quoted because it contains no special chars
         # but let's test one that does
-        sexp_special = SExp("text", "hello world")
-        result_special = sexp_special.serialize()
+        sexp_special = SExpr("text", "hello world")
+        result_special = serialize(sexp_special)
         assert '"hello world"' in result_special
 
     def test_sexp_quoting_empty_string(self):
         """Test that empty strings are quoted."""
-        sexp = SExp("value", "")
-        result = sexp.serialize()
+        sexp = SExpr("value", "")
+        result = serialize(sexp)
         assert '""' in result
 
     def test_sexp_quoting_digit_only(self):
         """Test that digit-only strings are quoted."""
-        sexp = SExp("pin", "123")
-        result = sexp.serialize()
+        sexp = SExpr("pin", "123")
+        result = serialize(sexp)
         assert '"123"' in result
 
     def test_raw_string_not_quoted(self):
         """Test that RawString values are not quoted."""
         raw = RawString("(symbol Test)")
-        sexp = SExp("lib_symbols", raw)
-        result = sexp.serialize()
+        sexp = SExpr("lib_symbols", raw)
+        result = serialize(sexp)
         assert "(symbol Test)" in result
         assert '"(symbol Test)"' not in result
 
 
-class TestKiCadWriter:
-    """Tests for KiCadWriter class."""
+class TestSchematicToSExprTransform:
+    """Tests for SchematicToSExprTransform class."""
 
     @pytest.fixture
-    def writer(self):
-        """Create a KiCadWriter instance."""
-        return KiCadWriter()
+    def transform(self):
+        """Create a SchematicToSExprTransform instance."""
+        return SchematicToSExprTransform()
 
-    def test_grid_to_mm_conversion(self, writer):
+    def test_grid_to_mm_conversion(self, transform):
         """Test grid unit to millimeter conversion."""
         # 1 grid = 0.127mm
-        assert writer._grid_to_mm(0) == "0.0000"
-        assert writer._grid_to_mm(100) == "12.7000"
-        assert writer._grid_to_mm(-100) == "-12.7000"
+        assert transform._grid_to_mm(0) == "0.0000"
+        assert transform._grid_to_mm(100) == "12.7000"
+        assert transform._grid_to_mm(-100) == "-12.7000"
 
-    def test_new_uuid_format(self, writer):
+    def test_new_uuid_format(self, transform):
         """Test that generated UUIDs are valid format."""
-        uuid = writer._new_uuid()
+        uuid = transform._new_uuid()
         # UUID format: 8-4-4-4-12 hex digits
         parts = uuid.split("-")
         assert len(parts) == 5
@@ -112,47 +113,50 @@ class TestKiCadWriter:
         assert len(parts[3]) == 4
         assert len(parts[4]) == 12
 
-    def test_write_trace_single_segment(self, writer):
-        """Test writing a trace with a single segment."""
+    def test_transform_trace_single_segment(self, transform):
+        """Test transforming a trace with a single segment."""
         trace = SchematicTrace(
             schematic_trace_id="trace_1",
             edges=[
                 SchematicTraceEdge(**{"from": Point(x=0, y=0), "to": Point(x=100, y=0)})
             ],
+            sheet_id="root",
         )
-        wires = writer._write_trace(trace)
+        wires = transform._transform_trace(trace)
         assert len(wires) == 1
         wire = wires[0]
         assert wire.name == "wire"
 
-    def test_write_trace_multiple_segments(self, writer):
-        """Test writing a trace with multiple segments."""
+    def test_transform_trace_multiple_segments(self, transform):
+        """Test transforming a trace with multiple segments."""
         trace = SchematicTrace(
             schematic_trace_id="trace_1",
             edges=[
                 SchematicTraceEdge(**{"from": Point(x=0, y=0), "to": Point(x=100, y=0)}),
                 SchematicTraceEdge(**{"from": Point(x=100, y=0), "to": Point(x=100, y=100)}),
             ],
+            sheet_id="root",
         )
-        wires = writer._write_trace(trace)
+        wires = transform._transform_trace(trace)
         assert len(wires) == 2
 
-    def test_write_label(self, writer):
-        """Test writing a net label."""
+    def test_transform_label(self, transform):
+        """Test transforming a net label."""
         label = SchematicNetLabel(
             schematic_net_label_id="label_1",
             source_net_id="net_vcc",
             center=Point(x=100, y=200),
             text="VCC",
             anchor_side="left",
+            sheet_id="root",
         )
-        sexp = writer._write_label(label)
-        result = sexp.serialize()
+        sexp = transform._transform_label(label)
+        result = serialize(sexp)
         assert "(label" in result
         assert "VCC" in result
 
-    def test_write_box_non_hierarchical(self, writer):
-        """Test writing a non-hierarchical box."""
+    def test_transform_box_non_hierarchical(self, transform):
+        """Test transforming a non-hierarchical box."""
         box = SchematicBox(
             schematic_box_id="box_1",
             x=0,
@@ -160,68 +164,73 @@ class TestKiCadWriter:
             width=200,
             height=100,
             is_hierarchical_sheet=False,
+            sheet_id="root",
         )
-        sexp = writer._write_box(box)
-        result = sexp.serialize()
+        sexp = transform._transform_box(box)
+        result = serialize(sexp)
         assert "(rectangle" in result
         assert "(start" in result
         assert "(end" in result
 
-    def test_write_project(self, writer):
-        """Test writing project file."""
+    def test_transform_project(self, transform):
+        """Test transforming project file."""
         import json
 
-        result = writer.write_project("my_project", ["root", "power", "mcu"])
+        result = transform.transform_project("my_project", ["root", "power", "mcu"])
         data = json.loads(result)
 
         assert data["meta"]["filename"] == "my_project.kicad_pro"
         assert data["meta"]["version"] == 3
         assert len(data["sheets"]) == 3
 
-    def test_resolve_lib_id_from_component(self, writer):
+    def test_resolve_lib_id_from_component(self, transform):
         """Test resolving library ID from component."""
         comp = SchematicComponent(
             schematic_component_id="sch_comp_1",
             source_component_id="comp_1",
             center=Point(x=0, y=0),
             symbol_name="Device:R",
+            sheet_id="root",
         )
         source = None
-        lib_id = writer._resolve_lib_id(comp, source)
+        lib_id = transform._resolve_lib_id(comp, source)
         assert lib_id == "Device:R"
 
-    def test_resolve_lib_id_from_source(self, writer):
+    def test_resolve_lib_id_from_source(self, transform):
         """Test resolving library ID from source component."""
         comp = SchematicComponent(
             schematic_component_id="sch_comp_1",
             source_component_id="comp_1",
             center=Point(x=0, y=0),
+            sheet_id="root",
         )
         source = SourceComponent(
             source_component_id="comp_1",
             name="R1",
             symbol_id="Device:R",
         )
-        lib_id = writer._resolve_lib_id(comp, source)
+        lib_id = transform._resolve_lib_id(comp, source)
         assert lib_id == "Device:R"
 
-    def test_resolve_lib_id_fallback(self, writer):
+    def test_resolve_lib_id_fallback(self, transform):
         """Test fallback library ID when none specified."""
         comp = SchematicComponent(
             schematic_component_id="sch_comp_1",
             source_component_id="comp_1",
             center=Point(x=0, y=0),
+            sheet_id="root",
         )
         source = SourceComponent(
             source_component_id="comp_1",
             name="U1",
         )
-        lib_id = writer._resolve_lib_id(comp, source)
+        lib_id = transform._resolve_lib_id(comp, source)
         assert lib_id == "Device:QuestionBlock"
 
-    def test_write_schematic_empty_sheet(self, writer):
-        """Test writing an empty schematic sheet."""
-        result = writer.write_schematic([], sheet_id="root", source_components={})
+    def test_transform_empty_sheet(self, transform):
+        """Test transforming an empty schematic sheet."""
+        sexp = transform.transform([], sheet_id="root", source_components={})
+        result = serialize(sexp)
 
         assert "(kicad_sch" in result
         assert "(version" in result

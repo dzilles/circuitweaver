@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from circuitweaver.types.circuit_json import CircuitElement, SchematicTrace
+from circuitweaver.types import CircuitElement, SchematicTrace
 from circuitweaver.validator.result import ValidationResult
 from circuitweaver.validator.rules.base import ValidationRule
 

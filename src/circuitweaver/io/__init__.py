@@ -1,0 +1,52 @@
+"""I/O modules for CircuitWeaver.
+
+This package handles reading and writing files:
+- json: JSON files for Source, Layout, and Schematic elements
+- s_expr: S-expression files for KiCad schematics
+"""
+
+from circuitweaver.io.json import (
+    # Circuit (combined Source + Schematic)
+    read_circuit,
+    write_circuit,
+    # Source only
+    read_source,
+    write_source,
+    # Layout only
+    read_layout,
+    write_layout,
+    # Schematic only
+    read_schematic,
+    write_schematic,
+    # Type maps
+    ELEMENT_TYPE_MAP,
+    SOURCE_TYPE_MAP,
+    SCHEMATIC_TYPE_MAP,
+    # Element parsing helpers
+    parse_element,
+    get_element_id_from_raw,
+)
+from circuitweaver.io.s_expr import (
+    read_s_expr,
+    write_s_expr,
+)
+
+__all__ = [
+    # JSON I/O
+    "read_circuit",
+    "write_circuit",
+    "read_source",
+    "write_source",
+    "read_layout",
+    "write_layout",
+    "read_schematic",
+    "write_schematic",
+    "ELEMENT_TYPE_MAP",
+    "SOURCE_TYPE_MAP",
+    "SCHEMATIC_TYPE_MAP",
+    "parse_element",
+    "get_element_id_from_raw",
+    # S-expr I/O
+    "read_s_expr",
+    "write_s_expr",
+]

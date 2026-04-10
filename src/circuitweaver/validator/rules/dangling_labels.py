@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from typing import Any, Dict, Set, Tuple
 
-from circuitweaver.types.circuit_json import (
+from circuitweaver.types import (
     CircuitElement,
     SchematicHierarchicalLabel,
     SchematicNetLabel,

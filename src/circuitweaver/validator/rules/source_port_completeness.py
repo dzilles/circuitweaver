@@ -3,8 +3,8 @@
 from collections import defaultdict
 from typing import Any
 
-from circuitweaver.library.pinout import get_symbol_pinout
-from circuitweaver.types.circuit_json import (
+from circuitweaver.library.pinout import get_symbol_info
+from circuitweaver.types import (
     CircuitElement,
     SourceComponent,
     SourcePort,
@@ -72,7 +72,7 @@ class SourcePortCompletenessRule(ValidationRule):
 
             # 2. Fetch expected pins from KiCad library
             try:
-                expected_pins = get_symbol_pinout(element.symbol_id)
+                expected_pins = get_symbol_info(element.symbol_id).pins
             except ValueError as e:
                 result.add_error(
                     self.name,

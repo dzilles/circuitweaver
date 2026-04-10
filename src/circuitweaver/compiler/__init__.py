@@ -1,16 +1,18 @@
 """Compiler for Circuit JSON to KiCad schematic format."""
 
-from circuitweaver.compiler.compiler import Compiler
+from circuitweaver.compiler.engine import CompileEngine
+from circuitweaver.compiler.auto_router import AutoRouter
+
 
 def compile_to_kicad(input_file, output_dir):
-    """Simple wrapper for the Compiler class."""
+    """Simple wrapper for the CompileEngine class."""
     import json
     from pathlib import Path
-    from circuitweaver.types.circuit_json import CircuitElement
-    
+    from circuitweaver.types import CircuitElement
+
     with open(input_file, "r") as f:
         data = json.load(f)
-    
+
     # Handle list or dict with 'elements' key
     if isinstance(data, dict) and "elements" in data:
         elements_data = data["elements"]
@@ -22,8 +24,9 @@ def compile_to_kicad(input_file, output_dir):
     from pydantic import TypeAdapter
     adapter = TypeAdapter(list[CircuitElement])
     elements = adapter.validate_python(elements_data)
-    
-    compiler = Compiler()
-    return compiler.compile(elements, Path(output_dir), project_name=Path(input_file).stem)
 
-__all__ = ["Compiler", "compile_to_kicad"]
+    engine = CompileEngine()
+    return engine.compile(elements, Path(output_dir), project_name=Path(input_file).stem)
+
+
+__all__ = ["CompileEngine", "AutoRouter", "compile_to_kicad"]
