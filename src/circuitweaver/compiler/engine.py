@@ -407,17 +407,8 @@ class CompileEngine:
                         conn["hpin_id"] = sheet_to_hpin_id.get(sid)
 
                 if needs_local_labels:
-                    for p in ports_in_sheet:
-                        lbl_id = f"nlabel_{net_id}_{p.source_port_id}"
-                        if not any(get_element_id(e) == lbl_id for e in generated):
-                            generated.append(SchematicNetLabel(
-                                schematic_net_label_id=lbl_id,
-                                sheet_id=sid,
-                                source_net_id=net_id,
-                                source_port_id=p.source_port_id,
-                                center=Point(x=0, y=0),
-                                text=net_name,
-                            ))
+                    # Labels are now generated and positioned by the layout engine
+                    pass
 
         return generated, sheet_connectivity
 

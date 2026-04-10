@@ -352,6 +352,50 @@ class TestLayoutToSchematicTransform:
         assert traces[0].sheet_id == "root"
         assert len(traces[0].edges) >= 1
 
+    def test_edge_position_is_snapped_correctly(self):
+        """Test that edge snapping uses absolute raw coordinates, not pre-snapped parent coordinates.
+        This prevents accumulating rounding errors (e.g. snap(5 + snap(105)) vs snap(5 + 105)).
+        """
+        transform = LayoutToSchematicTransform(grid_size=10.0)
+        registry = LayoutRegistry()
+
+        # Parent node is at 105 (snaps to 110)
+        # Edge starts at relative 5.
+        # If snapped incorrectly: snap(5 + snap(105)) = snap(5 + 110) = 120 (Python rounds 115 to nearest even 120)
+        # If snapped correctly: snap(5 + 105) = snap(110) = 110
+        layout = LayoutNode(
+            id="root",
+            x=105,
+            y=105,
+            edges=[
+                LayoutEdge(
+                    id="e_trace_1",
+                    sources=["R1:1"],
+                    targets=["C1:1"],
+                    sections=[
+                        LayoutEdgeSection(
+                            id="sec_1",
+                            startPoint=LayoutPoint(x=5, y=5),
+                            endPoint=LayoutPoint(x=15, y=15),
+                        )
+                    ],
+                )
+            ],
+        )
+
+        result = transform.transform("root", layout, registry, [])
+
+        traces = [e for e in result if isinstance(e, SchematicTrace)]
+        assert len(traces) == 1
+        
+        # The correct snapped absolute position is snap(105 + 5) = snap(110) = 110
+        assert traces[0].edges[0].from_.x == 110.0
+        assert traces[0].edges[0].from_.y == 110.0
+        
+        # The correct snapped absolute end position is snap(105 + 15) = snap(120) = 120
+        assert traces[0].edges[0].to.x == 120.0
+        assert traces[0].edges[0].to.y == 120.0
+
     def test_edge_with_bendpoints(self):
         """Test edge with bendpoints creates multi-segment trace."""
         transform = LayoutToSchematicTransform()
@@ -741,6 +785,34 @@ class TestTransformHierarchy:
         # Check for label edges inside boxes
         assert any(e.id.startswith("e_label_") for e in g1_node.edges)
         assert any(e.id.startswith("e_label_") for e in g2_node.edges)
+        
+        # Add mock routed sections to edges since we aren't running the real ELK router here
+        for e in g1_node.edges:
+            if e.id.startswith("e_label_"):
+                e.sections.append(LayoutEdgeSection(
+                    id=e.id + "_sec",
+                    startPoint=LayoutPoint(x=10, y=10),
+                    endPoint=LayoutPoint(x=20, y=10)
+                ))
+        for e in g2_node.edges:
+            if e.id.startswith("e_label_"):
+                e.sections.append(LayoutEdgeSection(
+                    id=e.id + "_sec",
+                    startPoint=LayoutPoint(x=30, y=10),
+                    endPoint=LayoutPoint(x=40, y=10)
+                ))
+
+        # 2. Layout → Schematic
+        sch_transform = LayoutToSchematicTransform()
+        schematic_elements = sch_transform.transform("root", layout, registry, elements)
+        
+        # Verify SchematicNetLabel elements are in the final schematic output
+        labels = [e for e in schematic_elements if isinstance(e, SchematicNetLabel)]
+        assert len(labels) == 2
+        
+        # Verify labels have been assigned non-zero coordinates
+        for label in labels:
+            assert label.center.x != 0.0 or label.center.y != 0.0
 
     def test_nested_subgroups(self):
         """Test multiple levels of nesting."""

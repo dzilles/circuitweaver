@@ -13,6 +13,7 @@ from circuitweaver.types import (
     LayoutEdge,
     LayoutNode,
     LayoutPort,
+    Point,
     SchematicHierarchicalLabel,
     SchematicHierarchicalPin,
     SchematicNetLabel,
@@ -367,7 +368,8 @@ class SourceToLayoutTransform:
                 sheet_id=ctx.sheet_id,
                 source_net_id=conn.get("net_id") or f"net_{conn['trace_id']}",
                 source_port_id=pid,
-                text=net_name
+                text=net_name,
+                center=Point(x=0, y=0)
             )
             ctx.registry.register_node(label_obj, f"label_node_{label_id}")
 

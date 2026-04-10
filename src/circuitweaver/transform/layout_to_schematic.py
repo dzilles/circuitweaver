@@ -270,7 +270,7 @@ class LayoutToSchematicTransform:
         snap: Callable[[float], float],
     ) -> None:
         """Process edges recursively and create traces."""
-        nx, ny = snap(node.x + parent_x), snap(node.y + parent_y)
+        raw_x, raw_y = node.x + parent_x, node.y + parent_y
 
         for edge in node.edges:
             eid = edge.id
@@ -290,7 +290,7 @@ class LayoutToSchematicTransform:
                     if edge.sections:
                         section = edge.sections[0]
                         endpoint = section.endPoint
-                        label.center = Point(x=snap(endpoint.x + nx), y=snap(endpoint.y + ny))
+                        label.center = Point(x=snap(endpoint.x + raw_x), y=snap(endpoint.y + raw_y))
 
                         # Calculate anchor side from direction
                         points = [section.startPoint] + list(section.bendPoints) + [section.endPoint]
@@ -301,6 +301,10 @@ class LayoutToSchematicTransform:
                                 label.anchor_side = "left" if dx > 0 else "right"
                             else:
                                 label.anchor_side = "top" if dy > 0 else "bottom"
+
+                    # Only append if not already in final_elements
+                    if not any(get_element_id(e) == get_element_id(label) for e in final_elements):
+                        final_elements.append(label)
 
                 source_trace_id = getattr(label, "source_net_id", None) if label else None
 
@@ -318,9 +322,9 @@ class LayoutToSchematicTransform:
 
             # Build traces from sections
             for section in edge.sections:
-                points = [Point(x=snap(section.startPoint.x + nx), y=snap(section.startPoint.y + ny))]
-                points.extend([Point(x=snap(bp.x + nx), y=snap(bp.y + ny)) for bp in section.bendPoints])
-                points.append(Point(x=snap(section.endPoint.x + nx), y=snap(section.endPoint.y + ny)))
+                points = [Point(x=snap(section.startPoint.x + raw_x), y=snap(section.startPoint.y + raw_y))]
+                points.extend([Point(x=snap(bp.x + raw_x), y=snap(bp.y + raw_y)) for bp in section.bendPoints])
+                points.append(Point(x=snap(section.endPoint.x + raw_x), y=snap(section.endPoint.y + raw_y)))
 
                 # Create trace edges, skipping zero-length segments
                 trace_edges = []
@@ -342,6 +346,6 @@ class LayoutToSchematicTransform:
         # Recurse into children
         for child in node.children:
             self._process_edges(
-                child, node.x + parent_x, node.y + parent_y,
+                child, raw_x, raw_y,
                 sheet_id, registry, elements, final_elements, snap,
             )
