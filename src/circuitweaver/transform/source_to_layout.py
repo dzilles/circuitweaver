@@ -243,7 +243,7 @@ class SourceToLayoutTransform:
                     side = {"left": "EAST", "right": "WEST", "up": "SOUTH", "down": "NORTH"}.get(pin_info.direction, "WEST")
                     
                     port_id = f"{comp.source_component_id}:{pin_info.number}"
-                    ports.append(LayoutPort(id=port_id, x=px, y=py, layoutOptions={"org.eclipse.elk.port.side": side}))
+                    ports.append(LayoutPort(id=port_id, x=px, y=py))
 
                     # Map source_port to this ELK port
                     source_port = next((p for p in ctx.elements if isinstance(p, SourcePort) 

@@ -662,8 +662,8 @@ class TestSymbolMapIntegration:
         # Pin 2 at x=60
         assert port_2.x == 60
 
-    def test_ports_have_elk_side_constraints(self, mock_symbol_info):
-        """Test that ports have ELK side constraints from pin direction."""
+    def test_ports_use_absolute_coordinates(self, mock_symbol_info):
+        """Test that ports use absolute grid coordinates without ELK side constraints."""
         elements = [
             SourceComponent(source_component_id="R1", name="R1", ftype="simple_resistor"),
             SourcePort(source_port_id="R1_1", source_component_id="R1", name="1", pin_number=1),
@@ -677,10 +677,15 @@ class TestSymbolMapIntegration:
         port_1 = next(p for p in node.ports if p.id == "R1:1")
         port_2 = next(p for p in node.ports if p.id == "R1:2")
 
-        # Pin direction "left" maps to EAST (inverted for schematic)
-        assert port_1.layoutOptions.get("org.eclipse.elk.port.side") == "EAST"
-        # Pin direction "right" maps to WEST
-        assert port_2.layoutOptions.get("org.eclipse.elk.port.side") == "WEST"
+        # Side constraints should be empty to prevent ELK from overriding our exact coordinates
+        assert "org.eclipse.elk.port.side" not in port_1.layoutOptions
+        assert "org.eclipse.elk.port.side" not in port_2.layoutOptions
+        
+        # Verify coordinates are correct relative to bounding box
+        assert port_1.x == 0.0
+        assert port_1.y == 15.0
+        assert port_2.x == 60.0
+        assert port_2.y == 15.0
 
     def test_ports_registered_in_registry(self, mock_symbol_info):
         """Test that ports are registered in the registry."""
