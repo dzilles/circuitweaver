@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "circuitweaver"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for generating KiCad schematics from Circuit JSON"
 readme = "README.md"
 license = "Apache-2.0"
@@ -42,6 +42,7 @@ dependencies = [
 [project.optional-dependencies]
 http = [
     "fastapi>=0.110.0",
+    "sse-starlette>=2.0.0",
     "uvicorn[standard]>=0.27.0",
 ]
 dev = [
@@ -72,6 +73,14 @@ Issues = "https://github.com/yourusername/circuitweaver/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/circuitweaver"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"README.md" = "circuitweaver/README.md"
+"src/circuitweaver/compiler/layout_helper.js" = "circuitweaver/compiler/layout_helper.js"
+"docs/circuit-json-spec.md" = "circuitweaver/docs/circuit-json-spec.md"
+"docs/mcp-workflow.md" = "circuitweaver/docs/mcp-workflow.md"
+"docs/troubleshooting.md" = "circuitweaver/docs/troubleshooting.md"
+"examples/simple_led/circuit.json" = "circuitweaver/examples/simple_led/circuit.json"
 
 [tool.ruff]
 target-version = "py311"

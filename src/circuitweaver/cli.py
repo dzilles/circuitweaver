@@ -2,7 +2,6 @@
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 from rich.console import Console
@@ -40,7 +39,7 @@ def validate(input_file: Path, output_format: str) -> None:
     if output_format == "json":
         import json
 
-        console.print(json.dumps(result.to_dict(), indent=2))
+        click.echo(json.dumps(result.to_dict(), indent=2))
     else:
         if result.is_valid:
             console.print(f"[bold green]SUCCESS:[/bold green] {input_file} is valid.")
@@ -81,7 +80,7 @@ def compile(file_path: str, output_dir: str, name: str):
     console.print(f"[bold blue]Compiling[/bold blue] {file_path}...")
 
     try:
-        with open(file_path, "r") as f:
+        with open(file_path) as f:
             data = json.load(f)
 
         adapter = TypeAdapter(list[CircuitElement])
@@ -207,6 +206,12 @@ def pins(symbol_id: str) -> None:
     help="Transport protocol for MCP server.",
 )
 @click.option(
+    "--tools",
+    type=str,
+    default=None,
+    help="Comma-separated list of MCP tools to enable. Defaults to all tools.",
+)
+@click.option(
     "--port",
     type=int,
     default=3000,
@@ -218,12 +223,16 @@ def pins(symbol_id: str) -> None:
     default="localhost",
     help="Host for HTTP transport (ignored for stdio).",
 )
-def serve(transport: str, port: int, host: str) -> None:
+def serve(transport: str, tools: str | None, port: int, host: str) -> None:
     """Run the MCP server."""
     from circuitweaver.server.mcp_server import create_server, run_server
 
+    enabled_tools = None
+    if tools:
+        enabled_tools = [tool.strip() for tool in tools.split(",") if tool.strip()]
+
     error_console.print(f"[bold blue]Starting CircuitWeaver MCP server ({transport})...[/bold blue]")
-    server = create_server()
+    server = create_server(enabled_tools=enabled_tools)
     run_server(server, transport=transport, port=port, host=host)
 
 

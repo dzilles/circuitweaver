@@ -10,15 +10,22 @@ from typing import Any
 
 try:
     from fastapi import FastAPI, Request, Response
-    from fastapi.responses import StreamingResponse
     from sse_starlette.sse import EventSourceResponse
 except ImportError:
     raise ImportError(
         "HTTP transport requires additional dependencies. "
         "Install with: pip install circuitweaver[http]"
-    )
+    ) from None
 
 from mcp.server import Server
+from mcp.types import (
+    CallToolRequest,
+    CallToolRequestParams,
+    ListResourcesRequest,
+    ListToolsRequest,
+    ReadResourceRequest,
+    ReadResourceRequestParams,
+)
 
 
 def create_http_app(server: Server) -> FastAPI:
@@ -69,7 +76,7 @@ def create_http_app(server: Server) -> FastAPI:
         )
 
     @app.get("/mcp/sse")
-    async def mcp_sse(request: Request) -> EventSourceResponse:
+    async def mcp_sse(_request: Request) -> EventSourceResponse:
         """Server-Sent Events endpoint for MCP streaming.
 
         This endpoint provides real-time updates via SSE.
@@ -109,23 +116,35 @@ async def _handle_mcp_request(server: Server, body: dict[str, Any]) -> str:
     try:
         if method == "tools/list":
             # List available tools
-            tools = await server.list_tools()
-            result = {"tools": [t.model_dump() for t in tools]}
+            req = ListToolsRequest(method="tools/list")
+            response = await server.request_handlers[ListToolsRequest](req)
+            tools = response.root.tools
+            result = {"tools": [t.model_dump(mode="json") for t in tools]}
         elif method == "tools/call":
             # Call a tool
             tool_name = params.get("name", "")
             tool_args = params.get("arguments", {})
-            result = await server.call_tool(tool_name, tool_args)
-            result = {"content": [c.model_dump() for c in result]}
+            req = CallToolRequest(
+                method="tools/call",
+                params=CallToolRequestParams(name=tool_name, arguments=tool_args),
+            )
+            response = await server.request_handlers[CallToolRequest](req)
+            result = {"content": [c.model_dump(mode="json") for c in response.root.content]}
         elif method == "resources/list":
             # List resources
-            resources = await server.list_resources()
-            result = {"resources": [r.model_dump() for r in resources]}
+            req = ListResourcesRequest(method="resources/list")
+            response = await server.request_handlers[ListResourcesRequest](req)
+            resources = response.root.resources
+            result = {"resources": [r.model_dump(mode="json") for r in resources]}
         elif method == "resources/read":
             # Read a resource
             uri = params.get("uri", "")
-            content = await server.read_resource(uri)
-            result = {"contents": [{"uri": uri, "text": content}]}
+            req = ReadResourceRequest(
+                method="resources/read",
+                params=ReadResourceRequestParams(uri=uri),
+            )
+            response = await server.request_handlers[ReadResourceRequest](req)
+            result = {"contents": [c.model_dump(mode="json") for c in response.root.contents]}
         else:
             return json.dumps(
                 {

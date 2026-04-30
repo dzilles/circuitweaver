@@ -3,8 +3,9 @@
 This module defines the registry of all available tools and their handlers.
 """
 
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine
+from typing import Any
 
 from mcp.types import Tool
 
@@ -98,7 +99,7 @@ async def get_symbol_pins(symbol_id: str) -> str:
     Use this to look up pin numbers and names before creating source_port elements.
     """
     from circuitweaver.library import get_symbol_info
-    from circuitweaver.types.errors import SymbolNotFoundError, LibraryNotFoundError
+    from circuitweaver.types.errors import LibraryNotFoundError, SymbolNotFoundError
 
     try:
         pins = get_symbol_info(symbol_id).pins
@@ -115,7 +116,7 @@ async def get_symbol_pins(symbol_id: str) -> str:
 
     header = f"| {'Pin #'.ljust(col1_w)} | {'Name'.ljust(col2_w)} | {'Electrical Type'.ljust(col3_w)} |"
     sep = f"| {'-' * col1_w} | {'-' * col2_w} | {'-' * col3_w} |"
-    
+
     lines = [f"Pins for {symbol_id}:\n", header, sep]
 
     for pin in pins:
@@ -319,7 +320,7 @@ TOOL_REGISTRY: dict[str, ToolHandler] = {
     ),
     "run_erc": ToolHandler(
         name="run_erc",
-        description="Run Electrical Rules Check (ERC) on a Circuit JSON file. Requires schematic elements to be present (run create_schematic first).",
+        description="Compile a Circuit JSON file in a temporary directory and run KiCad Electrical Rules Check (ERC) on the generated schematic.",
         parameters=[
             ToolParameter(
                 name="file_path",

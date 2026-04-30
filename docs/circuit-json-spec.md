@@ -369,10 +369,10 @@ Example:
 
 ### 2. Draft Logic
 
-Write the flat JSON array containing **only `source_*` elements**:
+Use the MCP client's normal file-writing capability to create a flat JSON array containing **only `source_*` elements**:
 
 ```
-write_file("logic_draft.json", [...])
+logic_draft.json = [source_* elements only]
 ```
 
 ### 3. Validate
@@ -387,25 +387,25 @@ Fix any errors before proceeding.
 
 ### 4. Auto-Layout
 
-Call the auto-layout tool to generate the visual schematic:
+Call the schematic creation tool to generate visual schematic elements and KiCad files:
 
 ```
-run_auto_layout("logic_draft.json", "circuit.json")
+create_schematic("logic_draft.json")
 ```
 
 This tool:
 - Reads your logic
 - Calculates X/Y coordinates for all components
 - Routes wires between connected ports
-- Outputs complete `circuit.json` with `schematic_*` elements
+- Writes `logic_draft_schematic.json`
+- Writes `logic_draft.kicad_sch` and `logic_draft.kicad_pro`
 
 ### 5. Compile & Check
 
-Generate KiCad files and run ERC:
+Run ERC against the Circuit JSON file:
 
 ```
-compile_to_kicad("circuit.json", "./output")
-run_erc("./output/project.kicad_sch")
+run_erc("logic_draft.json")
 ```
 
 If ERC returns errors, fix your `logic_draft.json` and repeat from step 3.
@@ -422,7 +422,7 @@ If ERC returns errors, fix your `logic_draft.json` and repeat from step 3.
 │     └── get_symbol_pins("Device:R")                        │
 │                                                             │
 │  2. DRAFT LOGIC                                             │
-│     └── write_file("logic_draft.json", [source_* only])    │
+│     └── Create logic_draft.json with source_* elements      │
 │                                                             │
 │  3. VALIDATE                                                │
 │     └── validate_circuit_json("logic_draft.json")          │
@@ -432,7 +432,7 @@ If ERC returns errors, fix your `logic_draft.json` and repeat from step 3.
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  4. AUTO-LAYOUT                                             │
-│     └── run_auto_layout("logic_draft.json", "circuit.json")│
+│     └── create_schematic("logic_draft.json")               │
 │         ↓ Adds schematic_component, schematic_trace, etc.  │
 │                                                             │
 ├─────────────────────────────────────────────────────────────┤
@@ -440,8 +440,7 @@ If ERC returns errors, fix your `logic_draft.json` and repeat from step 3.
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  5. COMPILE & CHECK                                         │
-│     ├── compile_to_kicad("circuit.json", "./output")       │
-│     └── run_erc("./output/project.kicad_sch")              │
+│     └── run_erc("logic_draft.json")                        │
 │                                                             │
 │  ✓ DONE: KiCad schematic ready                             │
 │                                                             │

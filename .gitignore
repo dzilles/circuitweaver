@@ -99,5 +99,4 @@ tmp/
 .gemini/
 .history/
 node_modules/
-package.json
 package-lock.json

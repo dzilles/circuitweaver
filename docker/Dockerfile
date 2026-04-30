@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # KiCad and dependencies
     kicad \
     kicad-libraries \
+    nodejs \
+    npm \
     # Build tools
     git \
     # Cleanup
@@ -23,11 +25,12 @@ RUN useradd -m -s /bin/bash circuitweaver
 WORKDIR /app
 
 # Copy project files
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml package.json README.md LICENSE ./
 COPY src/ src/
 
 # Install CircuitWeaver
 RUN pip install --no-cache-dir -e .
+RUN npm install --omit=dev
 
 # Switch to non-root user
 USER circuitweaver

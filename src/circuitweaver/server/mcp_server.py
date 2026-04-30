@@ -6,20 +6,21 @@ tools to AI assistants like Claude and Gemini.
 
 import asyncio
 import logging
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from importlib import resources
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Resource, TextContent, Tool
+from mcp.types import GetPromptResult, Prompt, PromptMessage, Resource, TextContent, Tool
 
 from circuitweaver.server.tool_registry import TOOL_REGISTRY, ToolHandler
-from circuitweaver import __version__
 
 logger = logging.getLogger(__name__)
 
 
 def create_server(
-    enabled_tools: Optional[Sequence[str]] = None,
+    enabled_tools: Sequence[str] | None = None,
 ) -> Server:
     """Create and configure the MCP server.
 
@@ -65,15 +66,51 @@ def create_server(
         """List available resources (documentation, examples)."""
         return [
             Resource(
+                uri="circuitweaver://docs/readme",
+                name="CircuitWeaver README",
+                description="Project overview, installation instructions, and quick-start examples.",
+                mimeType="text/markdown",
+            ),
+            Resource(
+                uri="circuitweaver://docs/install",
+                name="Installation Guide",
+                description="Linux, Windows, and optional HTTP installation instructions.",
+                mimeType="text/markdown",
+            ),
+            Resource(
+                uri="circuitweaver://docs/mcp-workflow",
+                name="MCP Workflow Guide",
+                description="Recommended workflow for using CircuitWeaver through MCP clients.",
+                mimeType="text/markdown",
+            ),
+            Resource(
+                uri="circuitweaver://tools/reference",
+                name="Tool Reference",
+                description="Live reference generated from the MCP tool registry.",
+                mimeType="text/markdown",
+            ),
+            Resource(
                 uri="circuitweaver://docs/circuit-json-spec",
                 name="Circuit JSON Specification",
                 description="Complete specification for the Circuit JSON format",
                 mimeType="text/markdown",
             ),
             Resource(
+                uri="circuitweaver://docs/troubleshooting",
+                name="Troubleshooting Guide",
+                description="Common installation and runtime issues.",
+                mimeType="text/markdown",
+            ),
+            Resource(
+                uri="circuitweaver://examples/simple-led",
+                name="Simple LED Example",
+                description="A complete logic-only Circuit JSON example.",
+                mimeType="text/markdown",
+            ),
+            Resource(
                 uri="circuitweaver://docs/examples",
                 name="Example Circuits",
-                description="Example Circuit JSON files",
+                description="Alias for circuitweaver://examples/simple-led.",
                 mimeType="text/markdown",
             ),
         ]
@@ -81,14 +118,26 @@ def create_server(
     @server.read_resource()
     async def read_resource(uri: str) -> str:
         """Read resource content."""
-        if uri == "circuitweaver://docs/circuit-json-spec":
+        uri = str(uri)
+        if uri == "circuitweaver://docs/readme":
+            return _get_readme()
+        elif uri == "circuitweaver://docs/install":
+            return _get_install_guide()
+        elif uri == "circuitweaver://docs/mcp-workflow":
+            return _get_mcp_workflow()
+        elif uri == "circuitweaver://tools/reference":
+            return _get_tools_reference(tools)
+        elif uri == "circuitweaver://docs/circuit-json-spec":
             return _get_circuit_json_spec()
-        elif uri == "circuitweaver://docs/examples":
+        elif uri == "circuitweaver://docs/troubleshooting":
+            return _get_troubleshooting()
+        elif uri in {
+            "circuitweaver://examples/simple-led",
+            "circuitweaver://docs/examples",
+        }:
             return _get_examples()
         else:
             raise ValueError(f"Unknown resource: {uri}")
-
-    from mcp.types import Prompt, GetPromptResult, PromptMessage
 
     @server.list_prompts()
     async def list_prompts() -> list[Prompt]:
@@ -96,17 +145,16 @@ def create_server(
         return [
             Prompt(
                 name="design-guidelines",
-                description="System instructions and rules for generating valid Circuit JSON schematics.",
+                description="Workflow guidance for designing Circuit JSON schematics with CircuitWeaver.",
             )
         ]
 
     @server.get_prompt()
-    async def get_prompt(name: str, arguments: dict[str, str] | None) -> GetPromptResult:
+    async def get_prompt(name: str, _arguments: dict[str, str] | None) -> GetPromptResult:
         """Get a specific prompt."""
         if name != "design-guidelines":
             raise ValueError(f"Unknown prompt: {name}")
 
-        spec = _get_circuit_json_spec()
         return GetPromptResult(
             description="System instructions for CircuitWeaver",
             messages=[
@@ -114,13 +162,111 @@ def create_server(
                     role="user",
                     content=TextContent(
                         type="text",
-                        text=f"You are a specialized CircuitWeaver agent. Follow these rules exactly when generating JSON:\n\n{spec}",
+                        text=(
+                            "You are helping design electronic schematics with CircuitWeaver.\n\n"
+                            "Before generating or modifying Circuit JSON, load these MCP resources "
+                            "when available:\n"
+                            "- circuitweaver://docs/mcp-workflow\n"
+                            "- circuitweaver://tools/reference\n"
+                            "- circuitweaver://docs/circuit-json-spec\n"
+                            "- circuitweaver://examples/simple-led when an example is useful\n\n"
+                            "Use the MCP client's normal file tools to create or edit JSON files. "
+                            "Use CircuitWeaver MCP tools only for CircuitWeaver-specific actions: "
+                            "part lookup, pin lookup, validation, schematic generation, and ERC. "
+                            "Do not call tools that are not listed in circuitweaver://tools/reference."
+                        ),
                     ),
                 )
             ],
         )
 
     return server
+
+
+def _read_packaged_or_source_text(package_path: str, source_path: str) -> str | None:
+    """Read a text file from an installed package, falling back to the source tree."""
+    try:
+        return resources.files("circuitweaver").joinpath(package_path).read_text()
+    except (FileNotFoundError, ModuleNotFoundError):
+        pass
+
+    from pathlib import Path
+
+    path = Path(__file__).parent.parent.parent.parent / source_path
+    if path.exists():
+        return path.read_text()
+
+    return None
+
+
+def _get_readme() -> str:
+    """Get the project README."""
+    content = _read_packaged_or_source_text("README.md", "README.md")
+    if content is not None:
+        return content
+
+    return "# CircuitWeaver README\n\nError: README file not found on server."
+
+
+def _get_install_guide() -> str:
+    """Get installation instructions extracted from the README."""
+    readme = _get_readme()
+    start = readme.find("## Installation")
+    end = readme.find("## Quick Start")
+    if start != -1 and end != -1 and end > start:
+        return readme[start:end].strip()
+
+    return "# Installation Guide\n\nError: Installation section not found in README."
+
+
+def _get_mcp_workflow() -> str:
+    """Get the MCP workflow guide."""
+    content = _read_packaged_or_source_text("docs/mcp-workflow.md", "docs/mcp-workflow.md")
+    if content is not None:
+        return content
+
+    return "# MCP Workflow Guide\n\nError: MCP workflow guide not found on server."
+
+
+def _get_tools_reference(tools: dict[str, ToolHandler]) -> str:
+    """Generate a tool reference from the active tool registry."""
+    lines = [
+        "# CircuitWeaver MCP Tool Reference",
+        "",
+        "This reference is generated from the currently enabled MCP tools.",
+        "",
+    ]
+
+    for tool in tools.values():
+        lines.append(f"## `{tool.name}`")
+        lines.append("")
+        lines.append(tool.description)
+        lines.append("")
+        if tool.parameters:
+            lines.append("| Parameter | Type | Required | Default | Description |")
+            lines.append("|-----------|------|----------|---------|-------------|")
+            for param in tool.parameters:
+                required = "yes" if param.required else "no"
+                default = "" if param.default is None else f"`{param.default}`"
+                lines.append(
+                    f"| `{param.name}` | `{param.type}` | {required} | {default} | "
+                    f"{param.description} |"
+                )
+            lines.append("")
+        else:
+            lines.append("No parameters.")
+            lines.append("")
+
+    return "\n".join(lines)
+
+
+def _get_troubleshooting() -> str:
+    """Get troubleshooting instructions."""
+    content = _read_packaged_or_source_text("docs/troubleshooting.md", "docs/troubleshooting.md")
+    if content is not None:
+        return content
+
+    return "# Troubleshooting Guide\n\nError: Troubleshooting guide not found on server."
 
 
 def run_server(
@@ -158,13 +304,14 @@ async def _run_stdio(server: Server) -> None:
 def _run_http(server: Server, host: str, port: int) -> None:
     """Run server with HTTP transport."""
     try:
-        from circuitweaver.server.http_transport import create_http_app
         import uvicorn
+
+        from circuitweaver.server.http_transport import create_http_app
     except ImportError:
         raise ImportError(
             "HTTP transport requires additional dependencies. "
             "Install with: pip install circuitweaver[http]"
-        )
+        ) from None
 
     app = create_http_app(server)
     uvicorn.run(app, host=host, port=port)
@@ -172,23 +319,23 @@ def _run_http(server: Server, host: str, port: int) -> None:
 
 def _get_circuit_json_spec() -> str:
     """Get the Circuit JSON specification document."""
-    from pathlib import Path
-    
-    # Try to find the file relative to this script
-    path = Path(__file__).parent.parent.parent.parent / "docs" / "circuit-json-spec.md"
-    if path.exists():
-        return path.read_text()
-        
+    content = _read_packaged_or_source_text(
+        "docs/circuit-json-spec.md",
+        "docs/circuit-json-spec.md",
+    )
+    if content is not None:
+        return content
+
     return "# Circuit JSON Specification\n\nError: Documentation file not found on server."
 
 
 def _get_examples() -> str:
     """Get example circuits."""
-    from pathlib import Path
-    
-    # Try to find the example file
-    path = Path(__file__).parent.parent.parent.parent / "examples" / "simple_led" / "circuit.json"
-    if path.exists():
-        return f"# Simple LED Example\n\n```json\n{path.read_text()}\n```"
-        
+    example = _read_packaged_or_source_text(
+        "examples/simple_led/circuit.json",
+        "examples/simple_led/circuit.json",
+    )
+    if example is not None:
+        return f"# Simple LED Example\n\n```json\n{example}\n```"
+
     return "# Example Circuits\n\nError: Example files not found on server."

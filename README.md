@@ -16,39 +16,130 @@ CircuitWeaver enables AI assistants like Claude and Gemini to design and generat
 ## Requirements
 
 - Python 3.11 or higher
-- KiCad 10.0+ (for compilation and ERC features)
+- Node.js 18+ and `elkjs` (for automatic schematic layout)
+- KiCad 10.0+ (for KiCad library search, compilation, and ERC features)
 
 ## Installation
 
-```bash
-# Install from PyPI (when published)
-pip install circuitweaver
+CircuitWeaver can be installed directly from this repository. The Python package is installed with `pip`; the auto-layout engine also needs the Node package `elkjs`.
 
-# Or install from source
-git clone https://github.com/yourusername/circuitweaver.git
-cd circuitweaver
-pip install -e .
+### Linux
+
+```bash
+# From the repository root
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install .
+
+# Install the Node layout dependency in the project/workspace
+npm install elkjs
+```
+
+For development, install the package in editable mode:
+
+```bash
+pip install -e ".[dev]"
+npm install
+```
+
+Install KiCad separately if you want library search, KiCad file generation, or ERC:
+
+```bash
+# Ubuntu/Debian example
+sudo apt update
+sudo apt install kicad
+```
+
+### Windows
+
+Install Python 3.11+, Node.js 18+, and KiCad first. Then run these commands from PowerShell in the repository root:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install .
+npm install elkjs
+```
+
+For development:
+
+```powershell
+pip install -e ".[dev]"
+npm install
+```
+
+If PowerShell blocks venv activation, run:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+### Optional HTTP Support
+
+The default MCP transport is stdio and does not need HTTP dependencies. Install the HTTP extras only if you want to run the HTTP transport:
+
+```bash
+pip install ".[http]"
+```
+
+When CircuitWeaver is published to PyPI, the Python package can be installed with:
+
+```bash
+pip install circuitweaver
+npm install elkjs
 ```
 
 ## Quick Start
 
-### 1. Add to Claude Code
+The examples below assume `circuitweaver` is on your `PATH`. If you installed into a virtual environment and your MCP client is not launched from that activated shell, use the absolute executable path instead:
+
+```bash
+/path/to/circuitweaver/.venv/bin/circuitweaver serve
+```
+
+```powershell
+C:\path\to\circuitweaver\.venv\Scripts\circuitweaver.exe serve
+```
+
+### Add to Claude Code
 
 ```bash
 # Add CircuitWeaver as an MCP server
-claude mcp add circuitweaver -- python -m circuitweaver serve
+claude mcp add circuitweaver -- circuitweaver serve
 ```
 
-### 2. Use in Conversation
+### Add to Codex
 
-Once added, Claude can use CircuitWeaver tools to:
+```bash
+codex mcp add circuitweaver -- circuitweaver serve
+```
+
+### Add to Gemini CLI
+
+Add this to your Gemini CLI `settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "circuitweaver": {
+      "command": "circuitweaver",
+      "args": ["serve"],
+      "timeout": 30000
+    }
+  }
+}
+```
+
+Once added, an MCP client can use CircuitWeaver tools to:
 - Search KiCad part libraries
 - Get component pinouts
 - Validate Circuit JSON designs
-- Compile to KiCad schematics
+- Create schematic layouts and KiCad files
 - Run electrical rules checks
 
-### 3. Standalone CLI
+### Standalone CLI
 
 ```bash
 # Validate a Circuit JSON file
@@ -58,7 +149,7 @@ circuitweaver validate design.json
 circuitweaver compile design.json -o output/
 
 # Run ERC on generated schematic
-circuitweaver erc output/main.kicad_sch
+circuitweaver erc output/project.kicad_sch
 
 # Start MCP server (stdio mode)
 circuitweaver serve
@@ -113,18 +204,33 @@ See [Circuit JSON Specification](docs/circuit-json-spec.md) for the complete for
 
 CircuitWeaver exposes the following tools via MCP:
 
-| Tool | Description | Requires KiCad |
-|------|-------------|----------------|
-| `search_kicad_parts` | Search component libraries | No |
-| `get_symbol_pinout` | Get pin positions for a symbol | No* |
-| `validate_circuit_file` | Validate Circuit JSON | No |
-| `compile_to_kicad` | Generate .kicad_sch files | Yes |
-| `run_erc` | Run electrical rules check | Yes |
-| `read_file` | Read file contents | No |
-| `write_file` | Write file contents | No |
-| `edit_file` | Edit file contents | No |
+| Tool | Description | External requirements |
+|------|-------------|-----------------------|
+| `search_kicad_parts` | Search KiCad component libraries | KiCad libraries for full results |
+| `get_symbol_pins` | Get pin positions for a symbol | KiCad libraries for custom symbols |
+| `validate_circuit_json` | Validate Circuit JSON | None |
+| `create_schematic` | Generate schematic layout and KiCad files | Node.js + `elkjs`; KiCad libraries for symbols |
+| `run_erc` | Compile a Circuit JSON file and run ERC | Node.js + `elkjs` + `kicad-cli` |
 
-*Bundled symbols don't require KiCad; custom libraries do.
+The MCP server intentionally does not expose generic `read_file`, `write_file`, or `edit_file` tools. Claude Code, Codex, Gemini CLI, and similar clients already provide their own file operations.
+
+## MCP Prompts and Resources
+
+CircuitWeaver exposes one reusable prompt:
+
+- `design-guidelines` - tells the client how to use CircuitWeaver resources and tools for circuit design.
+
+MCP clients usually do not inject server prompts or resources into the model automatically. The client must select the prompt or read the resource. CircuitWeaver exposes these resources:
+
+| Resource | Purpose |
+|----------|---------|
+| `circuitweaver://docs/readme` | Project overview and quick start |
+| `circuitweaver://docs/install` | Linux, Windows, and optional HTTP install instructions |
+| `circuitweaver://docs/mcp-workflow` | Recommended MCP design workflow |
+| `circuitweaver://tools/reference` | Live tool reference generated from enabled tools |
+| `circuitweaver://docs/circuit-json-spec` | Complete Circuit JSON specification |
+| `circuitweaver://docs/troubleshooting` | Common setup and runtime issues |
+| `circuitweaver://examples/simple-led` | Example logic-only Circuit JSON |
 
 ## Development
 
@@ -133,6 +239,7 @@ CircuitWeaver exposes the following tools via MCP:
 git clone https://github.com/yourusername/circuitweaver.git
 cd circuitweaver
 pip install -e ".[dev]"
+npm install
 
 # Run tests
 pytest
@@ -154,7 +261,6 @@ circuitweaver/
 ├── src/circuitweaver/
 │   ├── cli.py              # CLI entry point
 │   ├── server/             # MCP server implementation
-│   ├── tools/              # Tool implementations
 │   ├── types/              # Pydantic models
 │   ├── compiler/           # Circuit JSON → KiCad compiler
 │   ├── validator/          # Validation engine
@@ -172,7 +278,7 @@ Apache License 2.0 - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+Contributions are welcome. Please open an issue or pull request with a focused description of the change.
 
 ## Acknowledgments
 

@@ -5,10 +5,11 @@ Handles execution of the ELK (Eclipse Layout Kernel) via Node.js subprocess.
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ class AutoRouter:
     edges between them.
     """
 
-    def __init__(self, helper_path: Optional[Path] = None):
+    def __init__(self, helper_path: Path | None = None):
         """Initialize the auto-router.
 
         Args:
@@ -43,7 +44,7 @@ class AutoRouter:
         if not self.helper_path.exists():
             raise RuntimeError(f"ELK layout helper not found at: {self.helper_path}")
 
-    def run(self, graph: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, graph: dict[str, Any]) -> dict[str, Any]:
         """Execute the ELK layout algorithm on a graph.
 
         Args:
@@ -56,12 +57,23 @@ class AutoRouter:
             RuntimeError: If the Node.js process fails or returns an error.
         """
         try:
+            env = os.environ.copy()
+            node_paths = [
+                str(Path.cwd() / "node_modules"),
+                str(self.helper_path.parent.parent.parent.parent / "node_modules"),
+            ]
+            existing_node_path = env.get("NODE_PATH")
+            if existing_node_path:
+                node_paths.append(existing_node_path)
+            env["NODE_PATH"] = os.pathsep.join(node_paths)
+
             process = subprocess.run(
                 ["node", str(self.helper_path)],
                 input=json.dumps(graph),
                 capture_output=True,
                 text=True,
                 check=True,
+                env=env,
             )
             return json.loads(process.stdout)
         except subprocess.CalledProcessError as e:

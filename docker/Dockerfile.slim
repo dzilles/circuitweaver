@@ -29,7 +29,7 @@ WORKDIR /home/circuitweaver/workspace
 
 # Default command: start MCP server with limited tools
 ENTRYPOINT ["circuitweaver"]
-CMD ["serve", "--tools", "validate_circuit_file,search_kicad_parts,get_symbol_pinout,read_file,write_file,edit_file"]
+CMD ["serve", "--tools", "validate_circuit_json,search_kicad_parts,get_symbol_pins"]
 
 # Expose port for HTTP mode
 EXPOSE 3000

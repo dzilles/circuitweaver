@@ -40,4 +40,4 @@ This example demonstrates the **logic-only** format with `source_*` elements:
 3. **source_net**: Define named signals (VCC, GND)
 4. **source_trace**: Connect ports together and to nets
 
-The auto-layout tool (Phase 2) will generate the visual schematic from this logic.
+The `create_schematic` MCP tool or `circuitweaver compile` CLI command can generate the visual schematic and KiCad files from this logic.
