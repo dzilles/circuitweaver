@@ -104,6 +104,57 @@ def compile(file_path: str, output_dir: str, name: str):
     except Exception as e:
         console.print(f"\n[bold red]FAILED:[/bold red] {e}")
         import traceback
+
+        error_console.print(traceback.format_exc())
+        sys.exit(1)
+
+
+@main.command("check-layout")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option(
+    "--output-format",
+    "-f",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format for layout-quality diagnostics.",
+)
+def check_layout(file_path: str, output_format: str) -> None:
+    """Run layout-quality diagnostics for a Circuit JSON file."""
+    import json
+
+    from pydantic import TypeAdapter
+
+    from circuitweaver.compiler import CompileEngine
+    from circuitweaver.types import CircuitElement
+
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        adapter = TypeAdapter(list[CircuitElement])
+        elements = adapter.validate_python(data)
+        report = CompileEngine().check_layout_quality(elements)
+
+        if output_format == "json":
+            click.echo(json.dumps(report.to_dict(), indent=2))
+        else:
+            if not report.diagnostics:
+                console.print("[bold green]SUCCESS:[/bold green] No layout-quality issues found.")
+            else:
+                console.print(
+                    f"[bold yellow]WARNINGS:[/bold yellow] "
+                    f"Found {len(report.diagnostics)} layout-quality issue(s)."
+                )
+                for diagnostic in report.diagnostics:
+                    console.print(f"  - {diagnostic}")
+
+        if report.error_count:
+            sys.exit(1)
+
+    except Exception as e:
+        console.print(f"\n[bold red]FAILED:[/bold red] {e}")
+        import traceback
+
         error_console.print(traceback.format_exc())
         sys.exit(1)
 
@@ -231,7 +282,9 @@ def serve(transport: str, tools: str | None, port: int, host: str) -> None:
     if tools:
         enabled_tools = [tool.strip() for tool in tools.split(",") if tool.strip()]
 
-    error_console.print(f"[bold blue]Starting CircuitWeaver MCP server ({transport})...[/bold blue]")
+    error_console.print(
+        f"[bold blue]Starting CircuitWeaver MCP server ({transport})...[/bold blue]"
+    )
     server = create_server(enabled_tools=enabled_tools)
     run_server(server, transport=transport, port=port, host=host)
 

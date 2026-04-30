@@ -31,8 +31,10 @@ logger = logging.getLogger(__name__)
 # Configuration
 # =============================================================================
 
+
 class LayoutSizingConfig:
     """Default sizes for layout elements."""
+
     PIN_SPACING = 20
     MIN_BOX_WIDTH = 250
     MIN_BOX_HEIGHT = 100
@@ -56,6 +58,7 @@ def get_effective_symbol_id(comp: SourceComponent) -> Optional[str]:
 # =============================================================================
 # Registry for Element-to-Layout Mapping
 # =============================================================================
+
 
 class LayoutRegistry:
     """Tracks bidirectional mapping between CircuitElements and Layout IDs.
@@ -91,9 +94,11 @@ class LayoutRegistry:
 # Transform
 # =============================================================================
 
+
 @dataclass
 class _TransformContext:
     """Internal context passed during transformation."""
+
     sheet_id: str
     elements: List[CircuitElement]
     root_node: LayoutNode
@@ -126,6 +131,7 @@ class SourceToLayoutTransform:
             id=sheet_id,
             layoutOptions={
                 "org.eclipse.elk.algorithm": "layered",
+                "org.eclipse.elk.direction": "RIGHT",
                 "org.eclipse.elk.padding": "[top=100,left=100,bottom=100,right=100]",
                 "org.eclipse.elk.layered.spacing.nodeNode": "50",
             },
@@ -157,9 +163,12 @@ class SourceToLayoutTransform:
 
     def _build_node_hierarchy(self, ctx: _TransformContext) -> None:
         """Create LayoutNodes for all groups (subcircuits and subgroups)."""
-        groups = [e for e in ctx.elements if isinstance(e, SourceGroup)]
-        
-        # Sort groups by parent dependency to build bottom-up if needed, 
+        groups = sorted(
+            [e for e in ctx.elements if isinstance(e, SourceGroup)],
+            key=lambda g: g.source_group_id,
+        )
+
+        # Sort groups by parent dependency to build bottom-up if needed,
         # but here we'll just find parents recursively.
         processed: Set[str] = set()
 
@@ -170,13 +179,15 @@ class SourceToLayoutTransform:
             # Determine parent node
             parent_node = ctx.root_node
             if group.parent_source_group_id:
-                parent_group = next((g for g in groups if g.source_group_id == group.parent_source_group_id), None)
+                parent_group = next(
+                    (g for g in groups if g.source_group_id == group.parent_source_group_id), None
+                )
                 if parent_group:
                     parent_node = ensure_group_node(parent_group)
 
             # Create the node
             box_id = f"box_{group.source_group_id}"
-            
+
             # Sub-sheets get special ports for hierarchical connections
             ports = []
             if group.is_subcircuit:
@@ -189,7 +200,7 @@ class SourceToLayoutTransform:
                 ports=ports,
                 layoutOptions={"org.eclipse.elk.portConstraints": "FIXED_POS"},
             )
-            
+
             parent_node.children.append(node)
             ctx.node_map[box_id] = node
             ctx.registry.register_node(group, box_id)
@@ -199,35 +210,47 @@ class SourceToLayoutTransform:
         for g in groups:
             ensure_group_node(g)
 
-    def _create_hierarchical_ports(self, group: SourceGroup, ctx: _TransformContext) -> List[LayoutPort]:
+    def _create_hierarchical_ports(
+        self, group: SourceGroup, ctx: _TransformContext
+    ) -> List[LayoutPort]:
         """Create ports on a sub-sheet box for hierarchical pins."""
         box_id = f"box_{group.source_group_id}"
-        hpins = [
-            e for e in ctx.elements 
-            if isinstance(e, SchematicHierarchicalPin) and e.schematic_box_id == box_id
-        ]
-        
+        hpins = sorted(
+            [
+                e
+                for e in ctx.elements
+                if isinstance(e, SchematicHierarchicalPin) and e.schematic_box_id == box_id
+            ],
+            key=lambda hpin: hpin.schematic_hierarchical_pin_id,
+        )
+
         ports = []
         for i, hpin in enumerate(hpins):
             # Alternate sides
             side = "WEST" if i % 2 == 0 else "EAST"
             px = 0 if side == "WEST" else LayoutSizingConfig.MIN_BOX_WIDTH
             py = (i // 2 + 1) * LayoutSizingConfig.PIN_SPACING
-            
+
             port_id = f"{box_id}:{hpin.schematic_hierarchical_pin_id}"
-            ports.append(LayoutPort(
-                id=port_id,
-                x=px,
-                y=py,
-                layoutOptions={"org.eclipse.elk.port.side": side},
-            ))
+            ports.append(
+                LayoutPort(
+                    id=port_id,
+                    x=px,
+                    y=py,
+                    layoutOptions={"org.eclipse.elk.port.side": side},
+                )
+            )
             ctx.registry.register_port(hpin, port_id)
-            
+
         return ports
 
     def _add_components(self, ctx: _TransformContext) -> None:
         """Add components to their parent nodes."""
-        for comp in [e for e in ctx.elements if isinstance(e, SourceComponent)]:
+        components = sorted(
+            [e for e in ctx.elements if isinstance(e, SourceComponent)],
+            key=lambda comp: comp.source_component_id,
+        )
+        for comp in components:
             # Find the correct parent node (subgroup box or root)
             parent_id = f"box_{comp.source_group_id}" if comp.source_group_id else ctx.sheet_id
             parent_node = ctx.node_map.get(parent_id, ctx.root_node)
@@ -241,15 +264,15 @@ class SourceToLayoutTransform:
                 for pin_info in symbol.pins:
                     px = float(pin_info.grid_offset.x - symbol.bounding_box_min.x)
                     py = float(pin_info.grid_offset.y - symbol.bounding_box_min.y)
-                    side = {"left": "EAST", "right": "WEST", "up": "SOUTH", "down": "NORTH"}.get(pin_info.direction, "WEST")
-                    
+
                     port_id = f"{comp.source_component_id}:{pin_info.number}"
                     ports.append(LayoutPort(id=port_id, x=px, y=py))
 
                     # Map source_port to this ELK port
                     source_port = next(
                         (
-                            p for p in ctx.elements
+                            p
+                            for p in ctx.elements
                             if isinstance(p, SourcePort)
                             and p.source_component_id == comp.source_component_id
                             and (
@@ -267,16 +290,26 @@ class SourceToLayoutTransform:
                         ctx.registry.register_port(source_port, port_id)
             else:
                 # If no symbol info, create ports based on SourcePorts found in elements
-                comp_ports = [p for p in ctx.elements if isinstance(p, SourcePort) and p.source_component_id == comp.source_component_id]
+                comp_ports = sorted(
+                    [
+                        p
+                        for p in ctx.elements
+                        if isinstance(p, SourcePort)
+                        and p.source_component_id == comp.source_component_id
+                    ],
+                    key=lambda p: (str(p.pin_number or ""), p.source_port_id),
+                )
                 for i, sp in enumerate(comp_ports):
                     port_id = f"{comp.source_component_id}:{sp.pin_number}"
                     # Default positions for generic symbols
-                    ports.append(LayoutPort(
-                        id=port_id, 
-                        x=0, 
-                        y=i * LayoutSizingConfig.PIN_SPACING, 
-                        layoutOptions={"org.eclipse.elk.port.side": "WEST"}
-                    ))
+                    ports.append(
+                        LayoutPort(
+                            id=port_id,
+                            x=0,
+                            y=i * LayoutSizingConfig.PIN_SPACING,
+                            layoutOptions={"org.eclipse.elk.port.side": "WEST"},
+                        )
+                    )
                     ctx.registry.register_port(sp, port_id)
 
             node = LayoutNode(
@@ -294,22 +327,30 @@ class SourceToLayoutTransform:
         sheet_conn = ctx.sheet_connectivity.get(ctx.sheet_id, [])
         component_to_group = self._build_comp_group_map(ctx)
 
-        for conn in sheet_conn:
-            port_ids = conn.get("ports", [])
-            if not port_ids: continue
-            
+        for conn in sorted(sheet_conn, key=lambda c: c.get("trace_id", "")):
+            port_ids = sorted(conn.get("ports", []))
+            if not port_ids:
+                continue
+
             # 1. Determine group membership for all ports in this trace
             port_groups = []
             for pid in port_ids:
-                sport = next((e for e in ctx.elements if isinstance(e, SourcePort) and e.source_port_id == pid), None)
+                sport = next(
+                    (
+                        e
+                        for e in ctx.elements
+                        if isinstance(e, SourcePort) and e.source_port_id == pid
+                    ),
+                    None,
+                )
                 group = component_to_group.get(sport.source_component_id) if sport else None
                 port_groups.append(group)
-            
+
             # 2. Decide: Wires or Labels?
             # If all ports are in the same subgroup, use Wires.
             # If they span different subgroups, use Labels.
             is_cross_group = len(set(port_groups)) > 1 or conn.get("is_inter_sheet")
-            
+
             if not is_cross_group:
                 self._add_wires(conn, port_ids, ctx)
             else:
@@ -321,7 +362,14 @@ class SourceToLayoutTransform:
         for comp in [e for e in ctx.elements if isinstance(e, SourceComponent)]:
             if comp.source_group_id:
                 # Only map if it's a subgroup (on the same sheet)
-                group = next((g for g in ctx.elements if isinstance(g, SourceGroup) and g.source_group_id == comp.source_group_id), None)
+                group = next(
+                    (
+                        g
+                        for g in ctx.elements
+                        if isinstance(g, SourceGroup) and g.source_group_id == comp.source_group_id
+                    ),
+                    None,
+                )
                 if group and not group.is_subcircuit:
                     mapping[comp.source_component_id] = comp.source_group_id
         return mapping
@@ -329,49 +377,59 @@ class SourceToLayoutTransform:
     def _add_wires(self, conn: Dict[str, Any], port_ids: List[str], ctx: _TransformContext) -> None:
         """Connect ports with physical ELK edges."""
         src_elk_id = ctx.registry.element_to_port.get(port_ids[0])
-        if not src_elk_id: return
+        if not src_elk_id:
+            return
 
         for target_port_id in port_ids[1:]:
             tgt_elk_id = ctx.registry.element_to_port.get(target_port_id)
             if tgt_elk_id:
                 # Add edge to the lowest common ancestor node (usually root or subgroup box)
-                ctx.root_node.edges.append(LayoutEdge(
-                    id=f"e_{conn['trace_id']}_{target_port_id}",
-                    sources=[src_elk_id],
-                    targets=[tgt_elk_id],
-                ))
+                ctx.root_node.edges.append(
+                    LayoutEdge(
+                        id=f"e_{conn['trace_id']}_{target_port_id}",
+                        sources=[src_elk_id],
+                        targets=[tgt_elk_id],
+                    )
+                )
 
     def _get_parent_node_for_elk_id(self, elk_id: str, ctx: _TransformContext) -> LayoutNode:
         """Find the LayoutNode that contains the given ELK ID (port or node)."""
         node_id = elk_id.split(":")[0] if ":" in elk_id else elk_id
-        
+
         # Check if the node itself is in our map
         if node_id in ctx.node_map:
             return ctx.node_map[node_id]
-            
+
         # If it's a component, find its parent group
         element = ctx.registry.get_element_by_layout_id(node_id)
         if isinstance(element, SourceComponent) and element.source_group_id:
             return ctx.node_map.get(f"box_{element.source_group_id}", ctx.root_node)
-            
+
         return ctx.root_node
 
-    def _add_labels(self, conn: Dict[str, Any], port_ids: List[str], ctx: _TransformContext) -> None:
+    def _add_labels(
+        self, conn: Dict[str, Any], port_ids: List[str], ctx: _TransformContext
+    ) -> None:
         """Connect ports using local Net Labels instead of wires."""
-        net_name = conn.get("hier_label_text") if conn.get("is_inter_sheet") and not conn.get("is_global_net") else conn.get("label_text")
+        net_name = (
+            conn.get("hier_label_text")
+            if conn.get("is_inter_sheet") and not conn.get("is_global_net")
+            else conn.get("label_text")
+        )
         net_name = net_name or f"NET_{conn['trace_id']}"
 
         for pid in port_ids:
             elk_port_id = ctx.registry.element_to_port.get(pid)
-            if not elk_port_id: continue
-            
+            if not elk_port_id:
+                continue
+
             label_id = f"label_{conn['trace_id']}_{pid}"
             label_node = LayoutNode(id=f"label_node_{label_id}", width=len(net_name) * 7, height=10)
-            
+
             # Place label node in the same parent as its component
             parent_node = self._get_parent_node_for_elk_id(elk_port_id, ctx)
             parent_node.children.append(label_node)
-            
+
             # Create the visual element later during layout_to_schematic
             label_kwargs = {
                 "sheet_id": ctx.sheet_id,
@@ -393,32 +451,40 @@ class SourceToLayoutTransform:
                 )
             ctx.registry.register_node(label_obj, f"label_node_{label_id}")
 
-            parent_node.edges.append(LayoutEdge(
-                id=f"e_label_{label_id}",
-                sources=[elk_port_id],
-                targets=[f"label_node_{label_id}"],
-            ))
+            parent_node.edges.append(
+                LayoutEdge(
+                    id=f"e_label_{label_id}",
+                    sources=[elk_port_id],
+                    targets=[f"label_node_{label_id}"],
+                )
+            )
 
-    def _add_hierarchical_edge(self, conn: Dict[str, Any], port_id: str, ctx: _TransformContext) -> None:
+    def _add_hierarchical_edge(
+        self, conn: Dict[str, Any], port_id: str, ctx: _TransformContext
+    ) -> None:
         """Draw an edge between a component port and a hierarchical pin on the root page."""
         src_elk_id = ctx.registry.element_to_port.get(port_id)
         hpin_elk_id = ctx.registry.element_to_port.get(conn["hpin_id"])
-        
+
         if src_elk_id and hpin_elk_id:
-            ctx.root_node.edges.append(LayoutEdge(
-                id=f"e_to_hpin_{conn['trace_id']}_{get_element_id(port_id)}",
-                sources=[src_elk_id],
-                targets=[hpin_elk_id],
-            ))
+            ctx.root_node.edges.append(
+                LayoutEdge(
+                    id=f"e_to_hpin_{conn['trace_id']}_{get_element_id(port_id)}",
+                    sources=[src_elk_id],
+                    targets=[hpin_elk_id],
+                )
+            )
 
     def _add_attachments(self, ctx: _TransformContext) -> None:
         """Add remaining visual attachments like no-connect markers."""
         for nc in [e for e in ctx.elements if isinstance(e, SchematicNoConnect)]:
             port_id = nc.schematic_port_id
-            if port_id and port_id.startswith("port_"): port_id = port_id[5:]
-            
+            if port_id and port_id.startswith("port_"):
+                port_id = port_id[5:]
+
             elk_port_id = ctx.registry.element_to_port.get(port_id)
-            if not elk_port_id: continue
+            if not elk_port_id:
+                continue
 
             nc_node_id = f"nc_node_{nc.schematic_no_connect_id}"
             parent_node = self._get_parent_node_for_elk_id(elk_port_id, ctx)
@@ -427,8 +493,10 @@ class SourceToLayoutTransform:
             parent_node.children.append(nc_node)
             ctx.registry.register_node(nc, nc_node_id)
 
-            parent_node.edges.append(LayoutEdge(
-                id=f"e_nc_{nc.schematic_no_connect_id}",
-                sources=[elk_port_id],
-                targets=[nc_node_id],
-            ))
+            parent_node.edges.append(
+                LayoutEdge(
+                    id=f"e_nc_{nc.schematic_no_connect_id}",
+                    sources=[elk_port_id],
+                    targets=[nc_node_id],
+                )
+            )
