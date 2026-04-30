@@ -245,6 +245,13 @@ class LayoutToSchematicTransform:
             )
             if hpin:
                 hpin.center = Point(x=snap(raw_x + port.x), y=snap(raw_y + port.y))
+                for label in (
+                    e for e in elements
+                    if isinstance(e, SchematicNetLabel)
+                    and e.schematic_hierarchical_pin_id == hpin.schematic_hierarchical_pin_id
+                ):
+                    label.center = hpin.center
+                    label.anchor_side = "right" if port.x <= 0 else "left"
 
         final_elements.append(SchematicBox(
             schematic_box_id=nid,
@@ -254,7 +261,7 @@ class LayoutToSchematicTransform:
             width=box_width,
             height=box_height,
             is_hierarchical_sheet=bool(group.is_subcircuit),
-            child_sheet_id=group.subcircuit_id if group.is_subcircuit else None,
+            child_sheet_id=(group.subcircuit_id or group.source_group_id) if group.is_subcircuit else None,
             name=group.name,
         ))
 

@@ -20,7 +20,6 @@ from circuitweaver.types import (
     CircuitElement,
     LayoutNode,
     Point,
-    SchematicHierarchicalLabel,
     SchematicHierarchicalPin,
     SchematicNetLabel,
     SourceComponent,
@@ -38,6 +37,7 @@ from circuitweaver.transform import (
     get_effective_symbol_id,
 )
 from circuitweaver.compiler.auto_router import AutoRouter
+from circuitweaver.compiler.global_nets import GlobalNetResolver
 
 logger = logging.getLogger(__name__)
 
@@ -160,15 +160,20 @@ class CompileEngine:
             source_components, source_groups, source_ports
         )
         
-        # Use subcircuit_id for sheet IDs, matching _map_elements
-        subcircuit_ids = {g.subcircuit_id for g in source_groups if g.is_subcircuit and g.subcircuit_id}
+        # Use the explicit subcircuit_id when present, otherwise the group ID.
+        subcircuit_ids = {
+            self._get_group_sheet_id(g)
+            for g in source_groups
+            if g.is_subcircuit
+        }
         all_sheet_ids = {"root"} | subcircuit_ids
         symbol_map = self._load_symbols(source_components)
 
         # 2. Connectivity pre-processing
         connectivity_elements, sheet_connectivity = self._process_connectivity(
             source_traces, source_ports, source_nets,
-            element_to_sheet, element_to_group, source_groups, elements
+            element_to_sheet, element_to_group, source_groups, elements,
+            GlobalNetResolver.from_elements(elements),
         )
 
         final_positioned_elements: List[CircuitElement] = []
@@ -268,21 +273,26 @@ class CompileEngine:
         element_to_sheet = {}
         element_to_group = {}
         group_map = {g.source_group_id: g for g in groups}
+        subcircuit_map = {
+            sheet_id: g
+            for g in groups
+            if g.is_subcircuit and (sheet_id := self._get_group_sheet_id(g))
+        }
 
         def get_owner_sheet(gid: Optional[str]) -> str:
             """Recursively find the subcircuit_id that owns this group."""
             if not gid or gid not in group_map:
                 return "root"
             g = group_map[gid]
-            if g.is_subcircuit and g.subcircuit_id:
-                return g.subcircuit_id
+            if g.is_subcircuit:
+                return self._get_group_sheet_id(g)
             return get_owner_sheet(g.parent_source_group_id)
 
         for c in components:
             pid = c.source_group_id or c.subcircuit_id
             # Resolve subcircuit_id to source_group_id if needed
             if pid and pid not in group_map:
-                match = next((g for g in groups if g.subcircuit_id == pid), None)
+                match = subcircuit_map.get(pid)
                 if match:
                     pid = match.source_group_id
 
@@ -301,6 +311,11 @@ class CompileEngine:
             element_to_group[g.source_group_id] = g.parent_source_group_id or sheet
 
         return element_to_sheet, element_to_group
+
+    @staticmethod
+    def _get_group_sheet_id(group: SourceGroup) -> str:
+        """Return the schematic sheet ID owned by a subcircuit group."""
+        return group.subcircuit_id or group.source_group_id
 
     def _load_symbols(self, components: List[SourceComponent]) -> Dict[str, Any]:
         """Load symbol info for all components."""
@@ -323,6 +338,7 @@ class CompileEngine:
         element_to_group: Dict[str, str],
         groups: List[SourceGroup],
         elements: List[CircuitElement],
+        global_resolver: GlobalNetResolver,
     ) -> tuple[List[CircuitElement], Dict[str, List[Dict[str, Any]]]]:
         """Process connectivity to create labels and hierarchical pins."""
         generated = []
@@ -350,12 +366,16 @@ class CompileEngine:
                     "ports": [p.source_port_id for p in ports_in_sheet],
                     "is_inter_group": False,
                     "is_inter_sheet": False,
+                    "is_global_net": False,
+                    "label_text": net_name,
+                    "hier_label_text": hier_name,
                     "hpin_id": None,
                 })
 
         for (net_id, net_name, hier_name), involved_ports in nets_to_ports.items():
             involved_sheets = {element_to_sheet[p.source_port_id] for p in involved_ports if p.source_port_id in element_to_sheet}
-            is_global = any(global_name in net_name.upper() for global_name in ["GND", "5V", "3V3"])
+            raw_name = net_name.removeprefix("NET_")
+            is_global = global_resolver.is_global(net_map.get(net_id), net_id, raw_name)
             sheet_to_hpin_id = {}
             is_inter_sheet = len(involved_sheets) > 1 and not is_global
 
@@ -379,17 +399,14 @@ class CompileEngine:
                                 center=Point(x=0, y=0),
                                 text=hier_name,
                             ))
-                            ports_in_curr = [p for p in involved_ports if element_to_sheet.get(p.source_port_id) == curr]
-                            if ports_in_curr:
-                                hlabel_id = f"hlabel_{net_id}_{curr}"
-                                generated.append(SchematicHierarchicalLabel(
-                                    schematic_hierarchical_label_id=hlabel_id,
-                                    sheet_id=curr,
-                                    source_net_id=net_id,
-                                    source_port_id=ports_in_curr[0].source_port_id,
-                                    center=Point(x=0, y=0),
-                                    text=hier_name,
-                                ))
+                            generated.append(SchematicNetLabel(
+                                schematic_net_label_id=f"root_label_{net_id}_{curr}",
+                                sheet_id=parent,
+                                source_net_id=net_id,
+                                schematic_hierarchical_pin_id=hpin_id,
+                                center=Point(x=0, y=0),
+                                text=hier_name,
+                            ))
                         sheet_to_hpin_id[curr] = hpin_id
                         sheet_to_hpin_id[parent] = hpin_id
                         curr = parent
@@ -404,6 +421,9 @@ class CompileEngine:
                     if conn["net_id"] == net_id:
                         conn["is_inter_group"] = is_inter_group_on_sheet
                         conn["is_inter_sheet"] = len(involved_sheets) > 1
+                        conn["is_global_net"] = is_global
+                        conn["label_text"] = raw_name if is_global else net_name
+                        conn["hier_label_text"] = hier_name
                         conn["hpin_id"] = sheet_to_hpin_id.get(sid)
 
                 if needs_local_labels:

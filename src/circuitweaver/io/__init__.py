@@ -25,6 +25,8 @@ from circuitweaver.io.json import (
     # Element parsing helpers
     parse_element,
     get_element_id_from_raw,
+    get_unknown_fields,
+    describe_unknown_field,
 )
 from circuitweaver.io.s_expr import (
     read_s_expr,
@@ -46,6 +48,8 @@ __all__ = [
     "SCHEMATIC_TYPE_MAP",
     "parse_element",
     "get_element_id_from_raw",
+    "get_unknown_fields",
+    "describe_unknown_field",
     # S-expr I/O
     "read_s_expr",
     "write_s_expr",

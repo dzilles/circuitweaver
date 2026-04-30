@@ -155,6 +155,22 @@ class TestSchematicToSExprTransform:
         assert "(label" in result
         assert "VCC" in result
 
+    def test_transform_global_label(self, transform):
+        """Test transforming a global net label."""
+        label = SchematicNetLabel(
+            schematic_net_label_id="label_gnd",
+            source_net_id="GND",
+            center=Point(x=100, y=200),
+            text="GND",
+            anchor_side="left",
+            sheet_id="root",
+            is_global=True,
+        )
+        sexp = transform._transform_label(label)
+        result = serialize(sexp)
+        assert "(global_label" in result
+        assert "GND" in result
+
     def test_transform_box_non_hierarchical(self, transform):
         """Test transforming a non-hierarchical box."""
         box = SchematicBox(

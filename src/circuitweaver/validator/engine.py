@@ -8,8 +8,10 @@ from typing import Any
 from pydantic import ValidationError as PydanticValidationError
 
 from circuitweaver.io import (
+    describe_unknown_field,
     parse_element,
     get_element_id_from_raw,
+    get_unknown_fields,
 )
 from circuitweaver.types import (
     CircuitElement,
@@ -88,6 +90,14 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
         if "type" not in raw_element:
             result.add_error("structure", f"Element {i} missing 'type' field")
             continue
+
+        for field_name in get_unknown_fields(raw_element):
+            result.add_warning(
+                "unknown_field",
+                describe_unknown_field(raw_element, field_name),
+                element_id=get_element_id_from_raw(raw_element),
+                location={"element_index": i, "field": field_name},
+            )
 
         try:
             element = parse_element(raw_element)

@@ -70,6 +70,28 @@ class TestValidateCircuitFile:
         assert not result.is_valid
         assert any("not found" in str(e).lower() for e in result.errors)
 
+    def test_unknown_fields_produce_llm_actionable_warning(self, tmp_path: Path):
+        """Test that ignored fields are reported with replacement guidance."""
+        circuit = [
+            {"type": "source_net", "source_net_id": "HIN_A", "name": "HIN_A"},
+            {
+                "type": "source_trace",
+                "source_trace_id": "HIN_A_TRACE",
+                "source_net_id": "HIN_A",
+                "connected_source_port_ids": ["U1-30", "U2-2"],
+            },
+        ]
+        file_path = tmp_path / "unknown_field.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        assert any(w.rule == "unknown_field" for w in result.warnings)
+        warning_text = "\n".join(str(w) for w in result.warnings)
+        assert "source_net_id" in warning_text
+        assert "CircuitWeaver ignores unknown fields" in warning_text
+        assert "connected_source_net_ids" in warning_text
+
 
 class TestUniqueIds:
     """Tests for unique ID validation."""

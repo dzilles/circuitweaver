@@ -27,6 +27,7 @@ from circuitweaver.types import (
     SourceGroup,
     SourceNet,
     SourcePort,
+    SourceProjectConfig,
     SourceTrace,
 )
 
@@ -39,6 +40,7 @@ SOURCE_TYPE_MAP: dict[str, Type[CircuitElement]] = {
     "source_component": SourceComponent,
     "source_port": SourcePort,
     "source_net": SourceNet,
+    "source_project_config": SourceProjectConfig,
     "source_trace": SourceTrace,
     "source_group": SourceGroup,
 }
@@ -264,6 +266,44 @@ def parse_element(raw: dict[str, Any]) -> CircuitElement:
     return ELEMENT_TYPE_MAP[element_type].model_validate(raw)
 
 
+def get_unknown_fields(raw: dict[str, Any]) -> list[str]:
+    """Return raw JSON fields that are not defined by the element model."""
+    element_type = raw.get("type")
+    if element_type not in ELEMENT_TYPE_MAP:
+        return []
+
+    model = ELEMENT_TYPE_MAP[element_type]
+    valid_fields = set(model.model_fields)
+    valid_fields.update(
+        field.alias
+        for field in model.model_fields.values()
+        if field.alias is not None
+    )
+    return sorted(set(raw) - valid_fields)
+
+
+def describe_unknown_field(raw: dict[str, Any], field_name: str) -> str:
+    """Build an LLM-actionable warning message for an unknown raw JSON field."""
+    element_type = raw.get("type", "<missing type>")
+    element_id = get_element_id_from_raw(raw) or "<missing id>"
+    replacement = _UNKNOWN_FIELD_REPLACEMENTS.get((element_type, field_name))
+
+    message = (
+        f"Element '{element_id}' of type '{element_type}' contains unknown field "
+        f"'{field_name}'. CircuitWeaver ignores unknown fields, so this value will "
+        "not affect validation, layout, or KiCad output."
+    )
+    if replacement:
+        message += f" {replacement}"
+    else:
+        known_fields = ", ".join(sorted(ELEMENT_TYPE_MAP[element_type].model_fields))
+        message += (
+            " Remove the field or replace it with one of the supported fields for "
+            f"this element type: {known_fields}."
+        )
+    return message
+
+
 def _parse_elements(
     raw_elements: List[dict[str, Any]],
     type_map: dict[str, Type[CircuitElement]],
@@ -303,6 +343,18 @@ def _parse_elements(
     return elements
 
 
+_UNKNOWN_FIELD_REPLACEMENTS: dict[tuple[str, str], str] = {
+    (
+        "source_trace",
+        "source_net_id",
+    ): (
+        "To assign the trace to a net, use "
+        "'connected_source_net_ids': ['<source_net_id>'] instead, for example "
+        "'connected_source_net_ids': ['HIN_A']."
+    ),
+}
+
+
 def get_element_id_from_raw(raw: dict[str, Any]) -> str | None:
     """Extract element ID from a raw dictionary.
 
@@ -314,10 +366,32 @@ def get_element_id_from_raw(raw: dict[str, Any]) -> str | None:
     Returns:
         The element ID if found, None otherwise.
     """
+    type_id_fields = {
+        "source_component": "source_component_id",
+        "source_port": "source_port_id",
+        "source_net": "source_net_id",
+        "source_project_config": "source_project_config_id",
+        "source_trace": "source_trace_id",
+        "source_group": "source_group_id",
+        "schematic_component": "schematic_component_id",
+        "schematic_port": "schematic_port_id",
+        "schematic_trace": "schematic_trace_id",
+        "schematic_box": "schematic_box_id",
+        "schematic_net_label": "schematic_net_label_id",
+        "schematic_hierarchical_pin": "schematic_hierarchical_pin_id",
+        "schematic_hierarchical_label": "schematic_hierarchical_label_id",
+        "schematic_text": "schematic_text_id",
+        "schematic_no_connect": "schematic_no_connect_id",
+    }
+    id_field = type_id_fields.get(raw.get("type"))
+    if id_field and id_field in raw:
+        return raw[id_field]
+
     id_fields = [
         "source_component_id",
         "source_port_id",
         "source_net_id",
+        "source_project_config_id",
         "source_trace_id",
         "source_group_id",
         "schematic_component_id",

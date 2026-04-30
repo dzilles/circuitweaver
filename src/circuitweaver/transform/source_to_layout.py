@@ -247,9 +247,22 @@ class SourceToLayoutTransform:
                     ports.append(LayoutPort(id=port_id, x=px, y=py))
 
                     # Map source_port to this ELK port
-                    source_port = next((p for p in ctx.elements if isinstance(p, SourcePort) 
-                                      and p.source_component_id == comp.source_component_id 
-                                      and str(p.pin_number) == str(pin_info.number)), None)
+                    source_port = next(
+                        (
+                            p for p in ctx.elements
+                            if isinstance(p, SourcePort)
+                            and p.source_component_id == comp.source_component_id
+                            and (
+                                str(p.pin_number) == str(pin_info.number)
+                                or (
+                                    p.pin_number is None
+                                    and getattr(pin_info, "name", None) is not None
+                                    and p.name == pin_info.name
+                                )
+                            )
+                        ),
+                        None,
+                    )
                     if source_port:
                         ctx.registry.register_port(source_port, port_id)
             else:
@@ -302,10 +315,6 @@ class SourceToLayoutTransform:
             else:
                 self._add_labels(conn, port_ids, ctx)
 
-            # 3. Always handle hierarchical connections at the root level
-            if conn.get("is_inter_sheet") and conn.get("hpin_id"):
-                self._add_hierarchical_edge(conn, port_ids[0], ctx)
-
     def _build_comp_group_map(self, ctx: _TransformContext) -> Dict[str, str]:
         """Maps component ID to its parent subgroup ID (if any)."""
         mapping = {}
@@ -349,7 +358,8 @@ class SourceToLayoutTransform:
 
     def _add_labels(self, conn: Dict[str, Any], port_ids: List[str], ctx: _TransformContext) -> None:
         """Connect ports using local Net Labels instead of wires."""
-        net_name = f"NET_{conn['trace_id']}" # Default name
+        net_name = conn.get("hier_label_text") if conn.get("is_inter_sheet") and not conn.get("is_global_net") else conn.get("label_text")
+        net_name = net_name or f"NET_{conn['trace_id']}"
 
         for pid in port_ids:
             elk_port_id = ctx.registry.element_to_port.get(pid)
@@ -363,14 +373,24 @@ class SourceToLayoutTransform:
             parent_node.children.append(label_node)
             
             # Create the visual element later during layout_to_schematic
-            label_obj = SchematicNetLabel.model_construct(
-                schematic_net_label_id=label_id,
-                sheet_id=ctx.sheet_id,
-                source_net_id=conn.get("net_id") or f"net_{conn['trace_id']}",
-                source_port_id=pid,
-                text=net_name,
-                center=Point(x=0, y=0)
-            )
+            label_kwargs = {
+                "sheet_id": ctx.sheet_id,
+                "source_net_id": conn.get("net_id") or f"net_{conn['trace_id']}",
+                "source_port_id": pid,
+                "text": net_name,
+                "center": Point(x=0, y=0),
+            }
+            if conn.get("is_inter_sheet") and not conn.get("is_global_net"):
+                label_obj = SchematicHierarchicalLabel.model_construct(
+                    schematic_hierarchical_label_id=label_id,
+                    **label_kwargs,
+                )
+            else:
+                label_obj = SchematicNetLabel.model_construct(
+                    schematic_net_label_id=label_id,
+                    is_global=bool(conn.get("is_global_net")),
+                    **label_kwargs,
+                )
             ctx.registry.register_node(label_obj, f"label_node_{label_id}")
 
             parent_node.edges.append(LayoutEdge(

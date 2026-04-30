@@ -116,6 +116,7 @@ class SchematicNetLabel(SchematicElementBase):
     center: Point = Field(..., description="Coordinate")
     text: str = Field(..., description="Label text")
     anchor_side: Literal["left", "right", "top", "bottom"] = "left"
+    is_global: bool = False
 
 
 class SchematicHierarchicalPin(SchematicElementBase):

@@ -88,10 +88,22 @@ class SourceNet(BaseModel):
 
     is_power: Optional[bool] = None
     is_ground: Optional[bool] = None
+    is_global: Optional[bool] = None
     is_digital_signal: Optional[bool] = None
     is_analog_signal: Optional[bool] = None
     trace_width: Optional[float] = None
     subcircuit_id: Optional[str] = None
+
+
+class SourceProjectConfig(BaseModel):
+    """Project-level source settings."""
+
+    model_config = {"frozen": True}
+
+    type: Literal["source_project_config"] = "source_project_config"
+    source_project_config_id: str = "project_config"
+    global_net_names: list[str] = Field(default_factory=list)
+    use_kicad_power_symbols_as_global_nets: bool = True
 
 
 class SourceTrace(BaseModel):
@@ -138,6 +150,7 @@ LogicElement = Annotated[
         SourceComponent,
         SourcePort,
         SourceNet,
+        SourceProjectConfig,
         SourceTrace,
         SourceGroup,
     ],

@@ -227,6 +227,13 @@ class SchematicToSExprTransform:
         y = self._grid_to_mm(label.center.y)
         angle = {"right": 0, "top": 90, "left": 180, "bottom": 270}.get(label.anchor_side, 0)
         justify = label.anchor_side
+        if label.is_global:
+            return SExpr(
+                "global_label", label.text, SExpr("shape", "input"),
+                SExpr("at", x, y, angle),
+                SExpr("effects", SExpr("font", SExpr("size", 1.27, 1.27)), SExpr("justify", justify)),
+                SExpr("uuid", self._new_uuid())
+            )
         return SExpr(
             "label", label.text, SExpr("at", x, y, angle),
             SExpr("effects", SExpr("font", SExpr("size", 1.27, 1.27)), SExpr("justify", justify)),

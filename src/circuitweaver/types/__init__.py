@@ -10,6 +10,7 @@ from circuitweaver.types.source import (
     SourceGroup,
     SourceNet,
     SourcePort,
+    SourceProjectConfig,
     SourceTrace,
 )
 from circuitweaver.types.schematic import (
@@ -64,6 +65,7 @@ CircuitElement = Annotated[
         SourceComponent,
         SourcePort,
         SourceNet,
+        SourceProjectConfig,
         SourceTrace,
         SourceGroup,
         SchematicComponent,
@@ -93,6 +95,8 @@ def get_element_id(element: CircuitElement) -> str:
         return element.source_port_id
     elif isinstance(element, SourceNet):
         return element.source_net_id
+    elif isinstance(element, SourceProjectConfig):
+        return element.source_project_config_id
     elif isinstance(element, SourceTrace):
         return element.source_trace_id
     elif isinstance(element, SourceGroup):
@@ -129,6 +133,7 @@ __all__ = [
     "SourceComponent",
     "SourcePort",
     "SourceNet",
+    "SourceProjectConfig",
     "SourceTrace",
     "SourceGroup",
     "LogicElement",

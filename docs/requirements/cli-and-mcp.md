@@ -6,13 +6,15 @@ Status flags:
 - `[partial]` - partially implemented or implemented with important limitations.
 - `[missing]` - not implemented by the current codebase.
 - `[conflict]` - implemented current behavior that conflicts with a planned target requirement.
+- `[delete]` - Function is deprecated and should be deleted
+
 
 ## CLI
 
 - [implemented] `CLI-001` The CLI root command shall be named `circuitweaver`.
 - [implemented] `CLI-002` `circuitweaver --version` shall report `circuitweaver.__version__`.
 - [implemented] `CLI-003` `circuitweaver validate <input_file>` shall validate a Circuit JSON file.
-- [implemented] `CLI-004` `circuitweaver validate` shall support `--output-format text` and `--output-format json`.
+- [implemented] [delete] `CLI-004` `circuitweaver validate` shall support `--output-format text` and `--output-format json`.
 - [implemented] `CLI-005` `circuitweaver validate` shall exit with code `1` when validation has errors.
 - [implemented] `CLI-006` `circuitweaver compile <file_path>` shall parse a Circuit JSON file and write KiCad files through `CompileEngine`.
 - [implemented] `CLI-007` `circuitweaver compile` shall default output directory to `output`.
@@ -71,7 +73,7 @@ Status flags:
 - [implemented] `MCP-044` The server shall expose `circuitweaver://docs/circuit-json-spec`.
 - [implemented] `MCP-045` The server shall expose `circuitweaver://docs/troubleshooting`.
 - [implemented] `MCP-046` The server shall expose `circuitweaver://examples/simple-led`.
-- [implemented] `MCP-047` The server shall expose `circuitweaver://docs/examples` as an alias for the simple LED example.
+- [implemented] `MCP-047` The server shall expose `circuitweaver://docs/examples`.
 - [implemented] `MCP-048` Unknown resource URIs shall raise `ValueError`.
 - [implemented] `MCP-049` `circuitweaver://tools/reference` shall be generated from the currently active tool set.
 - [implemented] `MCP-050` Resource file loading shall first try packaged files under the `circuitweaver` package and then fall back to source-tree files.
@@ -97,3 +99,9 @@ Status flags:
 - [conflict] `MCP-078` The custom HTTP JSON-RPC handler shall implement `tools/list`, `tools/call`, `resources/list`, and `resources/read`. This conflicts with planned standards-compliant HTTP MCP transport requirement `ARCH-060`.
 - [implemented] `MCP-079` Unsupported HTTP JSON-RPC methods shall return JSON-RPC error code `-32601`.
 - [implemented] `MCP-080` HTTP handler exceptions shall return JSON-RPC error code `-32603`.
+
+# Review
+
+- [finding] `CLI-014` Does the test really checks the defaulting?
+- [finding] `CLI-018` Do we need both options?
+- [finding] `MCP-004` Silent failing?

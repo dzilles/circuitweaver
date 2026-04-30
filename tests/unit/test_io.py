@@ -64,6 +64,7 @@ class TestTypeMaps:
             "source_net",
             "source_trace",
             "source_group",
+            "source_project_config",
         }
         assert set(SOURCE_TYPE_MAP.keys()) == expected
 
@@ -178,6 +179,15 @@ class TestGetElementIdFromRaw:
         """Test extracting schematic_component_id."""
         raw = {"type": "schematic_component", "schematic_component_id": "sch_1"}
         assert get_element_id_from_raw(raw) == "sch_1"
+
+    def test_get_source_trace_id_prefers_type_specific_id(self):
+        """Test source_trace ID extraction ignores relation-like raw fields."""
+        raw = {
+            "type": "source_trace",
+            "source_trace_id": "trace_1",
+            "source_net_id": "net_1",
+        }
+        assert get_element_id_from_raw(raw) == "trace_1"
 
     def test_get_id_returns_none_if_missing(self):
         """Test that None is returned if no ID field found."""

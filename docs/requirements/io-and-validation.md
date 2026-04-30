@@ -13,7 +13,9 @@
 - [implemented] `IO-009` `write_layout` shall serialize a `LayoutNode` to JSON.
 - [implemented] `IO-010` `parse_element` shall reject missing `type` fields.
 - [implemented] `IO-011` `parse_element` shall reject unknown element types and list valid types in the error message.
-- [implemented] `IO-012` `get_element_id_from_raw` shall return the first supported ID field found in a raw dictionary, or `None`.
+- [implemented] `IO-012` `get_element_id_from_raw` shall prefer the ID field implied by the raw element's `type`, shall fall back to the first supported ID field when `type` is missing or unknown, and shall return `None` when no supported ID field exists.
+- [implemented] `IO-013` `get_unknown_fields` shall return raw JSON object fields that are not defined by the model selected by the element's `type`.
+- [implemented] `IO-014` `describe_unknown_field` shall explain that unknown fields are ignored by CircuitWeaver and shall include supported replacement guidance when the unknown field is a known likely authoring mistake.
 
 ## S-Expression I/O
 
@@ -38,6 +40,9 @@
 - [implemented] `VAL-009` If any structure or schema errors exist, rule validation shall not run.
 - [implemented] `VAL-010` `ValidationResult.is_valid` shall be true only when there are zero errors.
 - [implemented] `VAL-011` `ValidationResult.to_dict` shall include `is_valid`, `error_count`, `warning_count`, `errors`, and `warnings`.
+- [implemented] `VAL-012` `validate_circuit_file` shall produce a warning with rule `unknown_field` for every raw element field that is not defined by the element model.
+- [implemented] `VAL-013` Unknown-field warnings shall include the element type, element ID when available, ignored field name, and a statement that the field will not affect validation, layout, or KiCad output.
+- [implemented] `VAL-014` Unknown `source_net_id` on a `source_trace` shall warn that `connected_source_net_ids: ["<source_net_id>"]` is the supported field for assigning a trace to a source net.
 
 ## Active Validation Rules
 
@@ -82,4 +87,3 @@
 - [implemented] `VAL-072` `SchematicPort`, `SchematicHierarchicalPin`, and `SchematicTrace` endpoints shall contribute net presence at rounded `(sheet_id, x, y)` coordinates.
 - [implemented] `VAL-073` A `SchematicNetLabel` or `SchematicHierarchicalLabel` at rounded coordinate `(0, 0)` shall produce a warning.
 - [implemented] `VAL-074` A label whose `source_net_id` is not present at its rounded coordinate on its sheet shall produce a warning.
-

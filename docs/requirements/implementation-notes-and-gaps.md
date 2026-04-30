@@ -24,7 +24,9 @@ planning changes.
 - [conflict] `GAP-021` Layout is skipped entirely by `CompileEngine.compile` if any schematic element is present, even if the schematic layer is incomplete. This conflicts with planned stage-aware compilation requirement `ARCH-004`.
 - [partial] `GAP-022` `CompileEngine.compile` returns the root schematic path, but that path may remain `None` internally if no root sheet is written. This conflicts with the reliability goal behind `ARCH-005`.
 - [partial] `GAP-023` Debug ELK files may be written either to explicit debug paths or to the current working directory when `CIRCUITWEAVER_DEBUG_ELK` is enabled. This is implemented, but planned in-memory intermediate artifacts in `ARCH-006` are missing.
-- [partial] `GAP-024` Hierarchical net processing has special global-net handling only for names containing `GND`, `5V`, or `3V3`. This is implemented, but global-net handling is not yet configurable or profile-validated.
+- [implemented] `GAP-024` Hierarchical net processing no longer relies on hard-coded substring matching only; it uses explicit source net flags, project global-net configuration, and optional KiCad power-symbol defaults.
+- [implemented] `GAP-025` The root sheet creates label-based connections between matching hierarchical sheet pins for non-global inter-sheet nets.
+- [partial] `GAP-026` Global inter-sheet labels depend on source ports being mappable to schematic ports. Designs with incomplete source port pin metadata may not get fully connected global labels until port mapping is improved.
 
 ## KiCad Output Constraints
 
