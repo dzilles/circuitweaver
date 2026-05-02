@@ -12,6 +12,7 @@ class ValidationMessage:
     message: str
     element_id: str | None = None
     location: dict[str, Any] | None = None
+    profile: str | None = None
 
     def __str__(self) -> str:
         parts = [f"[{self.rule}]"]
@@ -42,9 +43,10 @@ class ValidationResult:
         message: str,
         element_id: str | None = None,
         location: dict[str, Any] | None = None,
+        profile: str | None = None,
     ) -> None:
         """Add an error to the result."""
-        self.errors.append(ValidationMessage(rule, message, element_id, location))
+        self.errors.append(ValidationMessage(rule, message, element_id, location, profile))
 
     def add_warning(
         self,
@@ -52,9 +54,10 @@ class ValidationResult:
         message: str,
         element_id: str | None = None,
         location: dict[str, Any] | None = None,
+        profile: str | None = None,
     ) -> None:
         """Add a warning to the result."""
-        self.warnings.append(ValidationMessage(rule, message, element_id, location))
+        self.warnings.append(ValidationMessage(rule, message, element_id, location, profile))
 
     def merge(self, other: "ValidationResult") -> None:
         """Merge another validation result into this one."""
@@ -73,6 +76,7 @@ class ValidationResult:
                     "message": e.message,
                     "element_id": e.element_id,
                     "location": e.location,
+                    "profile": e.profile,
                 }
                 for e in self.errors
             ],
@@ -82,6 +86,7 @@ class ValidationResult:
                     "message": w.message,
                     "element_id": w.element_id,
                     "location": w.location,
+                    "profile": w.profile,
                 }
                 for w in self.warnings
             ],

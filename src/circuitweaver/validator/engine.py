@@ -9,13 +9,15 @@ from pydantic import ValidationError as PydanticValidationError
 
 from circuitweaver.io import (
     describe_unknown_field,
-    parse_element,
     get_element_id_from_raw,
     get_unknown_fields,
+    parse_element,
 )
 from circuitweaver.types import (
     CircuitElement,
     SchematicComponent,
+    SchematicNetLabel,
+    SchematicNoConnect,
     SchematicPort,
     SchematicTrace,
     SourceComponent,
@@ -46,8 +48,32 @@ VALIDATION_RULES: list[type[ValidationRule]] = [
     DanglingLabelsRule,
 ]
 
+VALIDATION_PROFILES: dict[str, list[type[ValidationRule]]] = {
+    "source": [
+        UniqueIdsRule,
+        SourceReferencesRule,
+        TraceConnectionsRule,
+        SourcePortCompletenessRule,
+    ],
+    "schematic": [UniqueIdsRule, SourceReferencesRule, DanglingLabelsRule],
+    "compile-ready": [
+        UniqueIdsRule,
+        SourceReferencesRule,
+        TraceConnectionsRule,
+        SourcePortCompletenessRule,
+        DanglingLabelsRule,
+    ],
+    "erc-ready": [
+        UniqueIdsRule,
+        SourceReferencesRule,
+        TraceConnectionsRule,
+        SourcePortCompletenessRule,
+        DanglingLabelsRule,
+    ],
+}
 
-def validate_circuit_file(file_path: Path) -> ValidationResult:
+
+def validate_circuit_file(file_path: Path, profile: str = "source") -> ValidationResult:
     """Validate a Circuit JSON file.
 
     Args:
@@ -56,6 +82,12 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
     Returns:
         ValidationResult with errors and warnings.
     """
+    if profile not in VALIDATION_PROFILES:
+        raise ValueError(
+            f"Unknown validation profile: {profile}. "
+            f"Available profiles: {', '.join(sorted(VALIDATION_PROFILES))}"
+        )
+
     result = ValidationResult()
 
     # Load and parse JSON
@@ -63,10 +95,10 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
         with open(file_path) as f:
             raw_data = json.load(f)
     except json.JSONDecodeError as e:
-        result.add_error("json_parse", f"Invalid JSON: {e}")
+        result.add_error("json_parse", f"Invalid JSON: {e}", profile=profile)
         return result
     except FileNotFoundError:
-        result.add_error("file_not_found", f"File not found: {file_path}")
+        result.add_error("file_not_found", f"File not found: {file_path}", profile=profile)
         return result
 
     # Validate it's a list
@@ -74,6 +106,7 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
         result.add_error(
             "structure",
             f"Circuit JSON must be a list of elements, got {type(raw_data).__name__}",
+            profile=profile,
         )
         return result
 
@@ -84,11 +117,12 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
             result.add_error(
                 "structure",
                 f"Element {i} must be an object, got {type(raw_element).__name__}",
+                profile=profile,
             )
             continue
 
         if "type" not in raw_element:
-            result.add_error("structure", f"Element {i} missing 'type' field")
+            result.add_error("structure", f"Element {i} missing 'type' field", profile=profile)
             continue
 
         for field_name in get_unknown_fields(raw_element):
@@ -97,6 +131,7 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
                 describe_unknown_field(raw_element, field_name),
                 element_id=get_element_id_from_raw(raw_element),
                 location={"element_index": i, "field": field_name},
+                profile=profile,
             )
 
         try:
@@ -109,9 +144,10 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
                     "schema",
                     f"Element {i}: {loc} - {error['msg']}",
                     element_id=get_element_id_from_raw(raw_element),
+                    profile=profile,
                 )
         except ValueError as e:
-            result.add_error("schema", f"Element {i}: {e}")
+            result.add_error("schema", f"Element {i}: {e}", profile=profile)
 
     # If we have schema errors, don't run rule validation
     if not result.is_valid:
@@ -120,13 +156,139 @@ def validate_circuit_file(file_path: Path) -> ValidationResult:
     # Build context for rules
     context = _build_validation_context(elements)
 
-    # Run all validation rules
-    for rule_class in VALIDATION_RULES:
+    for rule_class in VALIDATION_PROFILES[profile]:
         rule = rule_class()
         rule_result = rule.validate(elements, context)
+        _tag_profile(rule_result, profile)
         result.merge(rule_result)
 
+    _run_profile_checks(profile, elements, context, result)
     return result
+
+
+def _tag_profile(result: ValidationResult, profile: str) -> None:
+    for message in [*result.errors, *result.warnings]:
+        message.profile = profile
+
+
+def _run_profile_checks(
+    profile: str,
+    elements: list[CircuitElement],
+    context: dict[str, Any],
+    result: ValidationResult,
+) -> None:
+    if profile == "schematic":
+        _validate_schematic_profile(elements, context, result, profile)
+    elif profile == "compile-ready":
+        _validate_compile_ready_profile(elements, result, profile)
+    elif profile == "erc-ready":
+        _validate_compile_ready_profile(elements, result, profile)
+        _validate_erc_ready_profile(result, profile)
+
+
+def _validate_schematic_profile(
+    elements: list[CircuitElement],
+    context: dict[str, Any],
+    result: ValidationResult,
+    profile: str,
+) -> None:
+    source_components = context["source_components"]
+    source_ports = context["source_ports"]
+    schematic_ids: set[str] = set()
+
+    for element in elements:
+        if isinstance(element, SchematicComponent):
+            if element.schematic_component_id in schematic_ids:
+                result.add_error(
+                    "schematic_unique_ids",
+                    f"Duplicate schematic element ID: {element.schematic_component_id}",
+                    element_id=element.schematic_component_id,
+                    profile=profile,
+                )
+            schematic_ids.add(element.schematic_component_id)
+            if element.source_component_id not in source_components:
+                result.add_error(
+                    "schematic_reference",
+                    f"Schematic component references missing source_component: {element.source_component_id}",
+                    element_id=element.schematic_component_id,
+                    profile=profile,
+                )
+            if element.center is None:
+                result.add_error(
+                    "schematic_geometry",
+                    "Schematic component must have a center position.",
+                    element_id=element.schematic_component_id,
+                    profile=profile,
+                )
+        elif isinstance(element, SchematicPort):
+            if element.schematic_port_id in schematic_ids:
+                result.add_error(
+                    "schematic_unique_ids",
+                    f"Duplicate schematic element ID: {element.schematic_port_id}",
+                    element_id=element.schematic_port_id,
+                    profile=profile,
+                )
+            schematic_ids.add(element.schematic_port_id)
+            if element.source_port_id not in source_ports:
+                result.add_error(
+                    "schematic_reference",
+                    f"Schematic port references missing source_port: {element.source_port_id}",
+                    element_id=element.schematic_port_id,
+                    profile=profile,
+                )
+        elif isinstance(element, SchematicTrace):
+            if element.schematic_trace_id in schematic_ids:
+                result.add_error(
+                    "schematic_unique_ids",
+                    f"Duplicate schematic element ID: {element.schematic_trace_id}",
+                    element_id=element.schematic_trace_id,
+                    profile=profile,
+                )
+            schematic_ids.add(element.schematic_trace_id)
+            if not element.edges:
+                result.add_error(
+                    "schematic_geometry",
+                    "Schematic trace must contain at least one edge.",
+                    element_id=element.schematic_trace_id,
+                    profile=profile,
+                )
+        elif isinstance(element, SchematicNetLabel) and not element.text:
+            result.add_error("schematic_label", "Schematic label text must not be empty.", profile=profile)
+        elif isinstance(element, SchematicNoConnect) and element.position is None:
+            result.add_error("schematic_no_connect", "No-connect marker must have a position.", profile=profile)
+
+
+def _validate_compile_ready_profile(
+    elements: list[CircuitElement],
+    result: ValidationResult,
+    profile: str,
+) -> None:
+    source_components = [e for e in elements if isinstance(e, SourceComponent)]
+    if not source_components:
+        result.add_error(
+            "compile_ready_source",
+            "At least one source component is required to generate KiCad files.",
+            profile=profile,
+        )
+    for component in source_components:
+        if not component.symbol_id and not component.ftype:
+            result.add_warning(
+                "compile_ready_symbol",
+                f"Component {component.source_component_id} has no symbol_id or ftype; fallback symbols may be used.",
+                element_id=component.source_component_id,
+                profile=profile,
+            )
+
+
+def _validate_erc_ready_profile(result: ValidationResult, profile: str) -> None:
+    from circuitweaver.library.paths import find_kicad_cli
+
+    if find_kicad_cli() is None:
+        result.add_error(
+            "erc_ready_kicad_cli",
+            "kicad-cli is required for ERC but was not found.",
+            profile=profile,
+        )
 
 
 def _build_validation_context(elements: list[CircuitElement]) -> dict[str, Any]:

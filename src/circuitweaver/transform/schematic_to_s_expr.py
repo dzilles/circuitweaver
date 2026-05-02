@@ -7,8 +7,9 @@ that can be serialized to KiCad schematic files.
 import logging
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from circuitweaver.types import (
     CircuitElement,
@@ -38,23 +39,25 @@ class SchematicToSExprTransform:
     The resulting SExpr can be serialized to a .kicad_sch file.
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, uuid_factory: Callable[[], str] | None = None):
+        self.uuid_factory = uuid_factory
 
     def _new_uuid(self) -> str:
         """Generate a new UUID for KiCad elements."""
+        if self.uuid_factory is not None:
+            return self.uuid_factory()
         return str(uuid.uuid4())
 
     def _grid_to_mm(self, grid: float) -> str:
         """Convert grid units to millimeters, preserving fractional precision."""
         val = Decimal(str(grid)) * GRID_TO_MM
-        return "{:.4f}".format(val)
+        return f"{val:.4f}"
 
     def transform(
         self,
-        elements: List[CircuitElement],
+        elements: list[CircuitElement],
         sheet_id: str,
-        source_components: Dict[str, SourceComponent],
+        source_components: dict[str, SourceComponent],
     ) -> SExpr:
         """Transform Schematic elements into a KiCad schematic S-expression.
 
@@ -164,14 +167,14 @@ class SchematicToSExprTransform:
 
         return sch
 
-    def _transform_no_connect(self, nc: SchematicNoConnect) -> Optional[SExpr]:
+    def _transform_no_connect(self, nc: SchematicNoConnect) -> SExpr | None:
         if not nc.position:
             return None
         x = self._grid_to_mm(nc.position.x)
         y = self._grid_to_mm(nc.position.y)
         return SExpr("no_connect", SExpr("at", x, y), SExpr("uuid", self._new_uuid()))
 
-    def _transform_hierarchical_sheet(self, box: SchematicBox, pins: List[SchematicHierarchicalPin]) -> SExpr:
+    def _transform_hierarchical_sheet(self, box: SchematicBox, pins: list[SchematicHierarchicalPin]) -> SExpr:
         x = self._grid_to_mm(box.x)
         y = self._grid_to_mm(box.y)
         w = self._grid_to_mm(box.width)
@@ -260,7 +263,7 @@ class SchematicToSExprTransform:
             SExpr("uuid", self._new_uuid())
         )
 
-    def _resolve_lib_id(self, comp: SchematicComponent, source: Optional[SourceComponent]) -> str:
+    def _resolve_lib_id(self, comp: SchematicComponent, source: SourceComponent | None) -> str:
         if comp.symbol_name and ":" in comp.symbol_name:
             return comp.symbol_name
         if source and source.symbol_id:
@@ -269,9 +272,9 @@ class SchematicToSExprTransform:
 
     def _collect_symbols_recursive(
         self,
-        components: List[SchematicComponent],
-        sources: Dict[str, SourceComponent],
-    ) -> Tuple[List[str], Dict[str, str]]:
+        components: list[SchematicComponent],
+        sources: dict[str, SourceComponent],
+    ) -> tuple[list[str], dict[str, str]]:
         embedded_defs = {}
         lib_id_to_lib_name = {}
         processed = set()
@@ -307,9 +310,9 @@ class SchematicToSExprTransform:
     def _transform_component(
         self,
         comp: SchematicComponent,
-        sources: Dict[str, SourceComponent],
-        lib_id_to_lib_name: Dict[str, str],
-        symbol: Optional[Any] = None,
+        sources: dict[str, SourceComponent],
+        lib_id_to_lib_name: dict[str, str],
+        symbol: Any | None = None,
     ) -> SExpr:
         source = sources.get(comp.source_component_id)
         lib_id_orig = self._resolve_lib_id(comp, source)
@@ -361,7 +364,7 @@ class SchematicToSExprTransform:
 
         return sexp
 
-    def _transform_trace(self, trace: SchematicTrace) -> List[SExpr]:
+    def _transform_trace(self, trace: SchematicTrace) -> list[SExpr]:
         sexps = []
         for edge in trace.edges:
             x1, y1 = self._grid_to_mm(edge.from_.x), self._grid_to_mm(edge.from_.y)
@@ -374,7 +377,7 @@ class SchematicToSExprTransform:
             ))
         return sexps
 
-    def transform_project(self, project_name: str, sheet_ids: List[str]) -> str:
+    def transform_project(self, project_name: str, sheet_ids: list[str]) -> str:
         """Transform project metadata to KiCad project JSON.
 
         Args:

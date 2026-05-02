@@ -388,5 +388,37 @@ def info() -> None:
     console.print(table)
 
 
+@main.command()
+@click.option(
+    "--output-format",
+    "-f",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format for diagnostics.",
+)
+def doctor(output_format: str) -> None:
+    """Run CircuitWeaver environment diagnostics."""
+    from circuitweaver.doctor import doctor_json, run_doctor
+
+    report = run_doctor()
+    if output_format == "json":
+        click.echo(doctor_json(report))
+    else:
+        table = Table(title="CircuitWeaver Doctor")
+        table.add_column("Check", style="cyan")
+        table.add_column("Status", style="bold")
+        table.add_column("Details")
+        for check in report.checks:
+            table.add_row(
+                check.name,
+                "[green]OK[/green]" if check.ok else "[red]FAILED[/red]",
+                check.details,
+            )
+        console.print(table)
+
+    if not report.ok:
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()

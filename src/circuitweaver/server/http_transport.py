@@ -6,6 +6,7 @@ allowing remote connections from Claude CLI and other tools.
 Requires the [http] extra: pip install circuitweaver[http]
 """
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 try:
@@ -26,8 +27,22 @@ from mcp.types import (
     ReadResourceRequestParams,
 )
 
+AuthHook = Callable[[Request], bool | Awaitable[bool]]
+LimitHook = Callable[[Request], bool | Awaitable[bool]]
 
-def create_http_app(server: Server) -> FastAPI:
+
+async def _call_hook(hook: AuthHook | LimitHook, request: Request) -> bool:
+    result = hook(request)
+    if hasattr(result, "__await__"):
+        return bool(await result)
+    return bool(result)
+
+
+def create_http_app(
+    server: Server,
+    auth_hook: AuthHook | None = None,
+    limit_hook: LimitHook | None = None,
+) -> FastAPI:
     """Create a FastAPI app wrapping the MCP server.
 
     Args:
@@ -41,6 +56,9 @@ def create_http_app(server: Server) -> FastAPI:
         description="MCP server for generating KiCad schematics from Circuit JSON",
         version="0.1.0",
     )
+    app.state.auth_hook = auth_hook
+    app.state.limit_hook = limit_hook
+    app.state.uses_streamable_http_transport = _has_streamable_http_transport()
 
     @app.get("/")
     async def root() -> dict[str, str]:
@@ -62,6 +80,10 @@ def create_http_app(server: Server) -> FastAPI:
 
         This endpoint handles MCP protocol messages over HTTP.
         """
+        if auth_hook is not None and not await _call_hook(auth_hook, request):
+            return Response(content='{"error":"unauthorized"}', status_code=401)
+        if limit_hook is not None and not await _call_hook(limit_hook, request):
+            return Response(content='{"error":"request limit exceeded"}', status_code=429)
         body = await request.json()
 
         # Process the MCP request
@@ -75,6 +97,14 @@ def create_http_app(server: Server) -> FastAPI:
         )
 
     return app
+
+
+def _has_streamable_http_transport() -> bool:
+    try:
+        from mcp.server.streamable_http_manager import StreamableHTTPSessionManager  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 async def _handle_mcp_request(server: Server, body: dict[str, Any]) -> str:

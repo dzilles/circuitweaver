@@ -12,8 +12,9 @@ import json
 import logging
 import os
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from circuitweaver.compiler.auto_router import AutoRouter
 from circuitweaver.compiler.global_nets import GlobalNetResolver
@@ -31,8 +32,10 @@ from circuitweaver.types import (
     CircuitElement,
     LayoutNode,
     Point,
+    SchematicComponent,
     SchematicHierarchicalPin,
     SchematicNetLabel,
+    SchematicPort,
     SourceComponent,
     SourceGroup,
     SourceNet,
@@ -60,21 +63,36 @@ class CompileEngine:
     Orchestrates the full transformation pipeline and file output.
     """
 
-    def __init__(self, helper_path: Optional[str] = None, kicad_cli_path: str = "kicad-cli"):
+    def __init__(
+        self,
+        helper_path: str | None = None,
+        kicad_cli_path: str = "kicad-cli",
+        router: AutoRouter | None = None,
+        symbol_lookup: Callable[[str], Any] | None = None,
+        erc_runner: Callable[[Path], dict[str, Any]] | None = None,
+        uuid_factory: Callable[[], str] | None = None,
+    ):
         """Initialize the compile engine.
 
         Args:
             helper_path: Path to the ELK layout helper JS file.
             kicad_cli_path: Path to kicad-cli for ERC checks.
         """
-        self.router = AutoRouter(helper_path=Path(helper_path) if helper_path else None)
+        self.router = router or AutoRouter(helper_path=Path(helper_path) if helper_path else None)
         self.kicad_cli_path = kicad_cli_path
+        self.symbol_lookup = symbol_lookup or get_symbol_info
+        self.erc_runner = erc_runner
+        self.uuid_factory = uuid_factory
+        self.last_layout_artifacts: dict[str, list[dict[str, Any]]] = {
+            "elk_inputs": [],
+            "elk_outputs": [],
+        }
 
     def project_from_elements(
         self,
-        elements: List[CircuitElement],
+        elements: list[CircuitElement],
         name: str = "project",
-        source_path: Optional[Path] = None,
+        source_path: Path | None = None,
     ) -> CircuitProject:
         """Create a CircuitProject from parsed circuit elements."""
         return CircuitProject(elements=list(elements), name=name, source_path=source_path)
@@ -138,8 +156,8 @@ class CompileEngine:
     def layout_project(
         self,
         project: CircuitProject,
-        debug_dir: Optional[Path] = None,
-        debug_basename: Optional[str] = None,
+        debug_dir: Path | None = None,
+        debug_basename: str | None = None,
     ) -> StageResult[CircuitProject]:
         """Run the layout stage and return a project with schematic elements."""
         result: StageResult[CircuitProject] = StageResult(stage="layout")
@@ -162,11 +180,21 @@ class CompileEngine:
                 metadata={"element_count": len(updated.schematic_elements)},
             )
         )
+        for artifact_kind, entries in self.last_layout_artifacts.items():
+            for entry in entries:
+                result.artifacts.append(
+                    OutputArtifact(
+                        kind=artifact_kind[:-1],
+                        name=str(entry["sheet_id"]),
+                        metadata={"sheet_id": entry["sheet_id"], "graph": entry["graph"]},
+                    )
+                )
         return result
 
     def schematic_project(self, project: CircuitProject) -> StageResult[CircuitProject]:
         """Ensure the project has schematic elements."""
-        if project.has_schematic_layer():
+        completeness = self.schematic_completeness(project)
+        if completeness.ok and project.has_schematic_layer():
             result: StageResult[CircuitProject] = StageResult(stage="schematic", value=project)
             result.artifacts.append(
                 OutputArtifact(
@@ -176,7 +204,41 @@ class CompileEngine:
                 )
             )
             return result
+        if project.has_schematic_layer() and not completeness.ok:
+            return self.layout_project(project)
         return self.layout_project(project)
+
+    def schematic_completeness(self, project: CircuitProject) -> StageResult[CircuitProject]:
+        """Check whether an existing schematic layer covers source components and ports."""
+        result: StageResult[CircuitProject] = StageResult(
+            stage="schematic_completeness",
+            value=project,
+        )
+        if not project.has_schematic_layer():
+            result.add_warning("missing_schematic_layer", "Project has no schematic layer.")
+            return result
+
+        schematic_component_sources = {
+            e.source_component_id
+            for e in project.schematic_elements
+            if isinstance(e, SchematicComponent)
+        }
+        schematic_port_sources = {
+            e.source_port_id for e in project.schematic_elements if isinstance(e, SchematicPort)
+        }
+        missing_components = sorted(set(project.source_components) - schematic_component_sources)
+        missing_ports = sorted(set(project.source_ports) - schematic_port_sources)
+        if missing_components:
+            result.add_error(
+                "incomplete_schematic_components",
+                f"Schematic layer is missing source components: {', '.join(missing_components)}",
+            )
+        if missing_ports:
+            result.add_error(
+                "incomplete_schematic_ports",
+                f"Schematic layer is missing source ports: {', '.join(missing_ports)}",
+            )
+        return result
 
     def kicad_project(self, project: CircuitProject) -> StageResult[KiCadProject]:
         """Transform schematic elements to in-memory KiCad S-expressions."""
@@ -188,8 +250,8 @@ class CompileEngine:
             )
             return result
 
-        source_components: Dict[str, SourceComponent] = project.source_components
-        transform = SchematicToSExprTransform()
+        source_components: dict[str, SourceComponent] = project.source_components
+        transform = SchematicToSExprTransform(uuid_factory=self.uuid_factory)
         schematics = {
             sheet_id: transform.transform(project.elements, sheet_id, source_components)
             for sheet_id in project.sheet_ids
@@ -247,7 +309,7 @@ class CompileEngine:
 
     def compile(
         self,
-        elements: List[CircuitElement],
+        elements: list[CircuitElement],
         output_dir: Path,
         project_name: str = "project",
     ) -> Path:
@@ -285,10 +347,10 @@ class CompileEngine:
 
     def layout(
         self,
-        elements: List[CircuitElement],
-        debug_dir: Optional[Path] = None,
-        debug_basename: Optional[str] = None,
-    ) -> List[CircuitElement]:
+        elements: list[CircuitElement],
+        debug_dir: Path | None = None,
+        debug_basename: str | None = None,
+    ) -> list[CircuitElement]:
         """Run auto-layout on source elements.
 
         Transforms Source elements into positioned Schematic elements.
@@ -309,6 +371,7 @@ class CompileEngine:
 
         if not source_components:
             return elements
+        self.last_layout_artifacts = {"elk_inputs": [], "elk_outputs": []}
 
         # 1. Map elements to sheets and load symbols
         element_to_sheet, element_to_group = self._map_elements(
@@ -332,7 +395,7 @@ class CompileEngine:
             GlobalNetResolver.from_elements(elements),
         )
 
-        final_positioned_elements: List[CircuitElement] = []
+        final_positioned_elements: list[CircuitElement] = []
 
         # 3. Process each sheet
         for sheet_id in all_sheet_ids:
@@ -362,6 +425,9 @@ class CompileEngine:
 
             # Run ELK auto-router
             elk_dict = layout_node.model_dump()
+            self.last_layout_artifacts["elk_inputs"].append(
+                {"sheet_id": sheet_id, "graph": elk_dict}
+            )
             if DEBUG_ELK or (debug_dir and debug_basename):
                 if debug_dir and debug_basename:
                     suffix = "" if sheet_id == "root" else f"_{sheet_id}"
@@ -372,6 +438,9 @@ class CompileEngine:
                     Path(f"debug_elk_in_{sheet_id}.json").write_text(json.dumps(elk_dict, indent=2))
 
             layout_results_dict = self.router.run(elk_dict)
+            self.last_layout_artifacts["elk_outputs"].append(
+                {"sheet_id": sheet_id, "graph": layout_results_dict}
+            )
 
             if DEBUG_ELK or (debug_dir and debug_basename):
                 if debug_dir and debug_basename:
@@ -405,7 +474,7 @@ class CompileEngine:
 
     def check_layout_quality(
         self,
-        elements: List[CircuitElement],
+        elements: list[CircuitElement],
     ) -> LayoutQualityReport:
         """Run layout-quality diagnostics against positioned schematic elements.
 
@@ -420,10 +489,10 @@ class CompileEngine:
 
     def _get_sheet_elements(
         self,
-        elements: List[CircuitElement],
-        element_to_sheet: Dict[str, str],
+        elements: list[CircuitElement],
+        element_to_sheet: dict[str, str],
         sheet_id: str,
-    ) -> List[CircuitElement]:
+    ) -> list[CircuitElement]:
         """Get elements belonging to a specific sheet."""
         result = []
         for e in elements:
@@ -442,10 +511,10 @@ class CompileEngine:
 
     def _map_elements(
         self,
-        components: List[SourceComponent],
-        groups: List[SourceGroup],
-        ports: List[SourcePort],
-    ) -> tuple[Dict[str, str], Dict[str, str]]:
+        components: list[SourceComponent],
+        groups: list[SourceGroup],
+        ports: list[SourcePort],
+    ) -> tuple[dict[str, str], dict[str, str]]:
         """Map elements to their sheets and groups."""
         element_to_sheet = {}
         element_to_group = {}
@@ -456,7 +525,7 @@ class CompileEngine:
             if g.is_subcircuit and (sheet_id := self._get_group_sheet_id(g))
         }
 
-        def get_owner_sheet(gid: Optional[str]) -> str:
+        def get_owner_sheet(gid: str | None) -> str:
             """Recursively find the subcircuit_id that owns this group."""
             if not gid or gid not in group_map:
                 return "root"
@@ -494,29 +563,29 @@ class CompileEngine:
         """Return the schematic sheet ID owned by a subcircuit group."""
         return group.subcircuit_id or group.source_group_id
 
-    def _load_symbols(self, components: List[SourceComponent]) -> Dict[str, Any]:
+    def _load_symbols(self, components: list[SourceComponent]) -> dict[str, Any]:
         """Load symbol info for all components."""
         unique_symbols = {}
         for comp in components:
             symbol_id = get_effective_symbol_id(comp)
             if symbol_id and symbol_id not in unique_symbols:
                 try:
-                    unique_symbols[symbol_id] = get_symbol_info(symbol_id)
+                    unique_symbols[symbol_id] = self.symbol_lookup(symbol_id)
                 except Exception as e:
                     logger.warning(f"Could not load symbol {symbol_id}: {e}")
         return unique_symbols
 
     def _process_connectivity(
         self,
-        traces: List[SourceTrace],
-        ports: List[SourcePort],
-        nets: List[SourceNet],
-        element_to_sheet: Dict[str, str],
-        element_to_group: Dict[str, str],
-        groups: List[SourceGroup],
-        elements: List[CircuitElement],
+        traces: list[SourceTrace],
+        ports: list[SourcePort],
+        nets: list[SourceNet],
+        element_to_sheet: dict[str, str],
+        element_to_group: dict[str, str],
+        _groups: list[SourceGroup],
+        elements: list[CircuitElement],
         global_resolver: GlobalNetResolver,
-    ) -> tuple[List[CircuitElement], Dict[str, List[Dict[str, Any]]]]:
+    ) -> tuple[list[CircuitElement], dict[str, list[dict[str, Any]]]]:
         """Process connectivity to create labels and hierarchical pins."""
         generated = []
         sheet_connectivity = defaultdict(list)
@@ -640,7 +709,7 @@ class CompileEngine:
 
         return generated, sheet_connectivity
 
-    def run_erc(self, schematic_path: Path) -> Dict[str, Any]:
+    def run_erc(self, schematic_path: Path) -> dict[str, Any]:
         """Run ERC on a generated schematic.
 
         Args:
@@ -651,5 +720,7 @@ class CompileEngine:
         """
         from circuitweaver.erc.checker import ERCChecker
 
+        if self.erc_runner is not None:
+            return self.erc_runner(schematic_path)
         checker = ERCChecker(kicad_cli_path=self.kicad_cli_path)
         return checker.run(schematic_path)
