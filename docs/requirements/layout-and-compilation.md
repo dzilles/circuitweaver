@@ -30,14 +30,14 @@
 ## Compile Engine Layout Flow
 
 - [implemented] `CMP-001` `CompileEngine.compile` shall create the output directory if needed.
-- [conflict] `CMP-002` `CompileEngine.compile` shall run auto-layout only when no input element type starts with `schematic_`. This current all-or-nothing heuristic conflicts with planned stage-aware compilation requirement `ARCH-004`.
-- [conflict] `CMP-003` If any input element type starts with `schematic_`, `CompileEngine.compile` shall skip auto-layout. This current all-or-nothing heuristic conflicts with planned stage-aware compilation requirement `ARCH-004`.
+- [implemented] `CMP-002` `CompileEngine.compile` shall validate schematic layer completeness before deciding whether to reuse existing schematic elements or run auto-layout.
+- [implemented] `CMP-003` If input contains a complete schematic layer, `CompileEngine.compile` shall reuse it; if the schematic layer is absent or incomplete, it shall run auto-layout.
 - [implemented] `CMP-004` If no sheet IDs are present after layout selection, the compiler shall use a root sheet ID of `root`.
 - [implemented] `CMP-005` The compiler shall write one `.kicad_sch` file per discovered sheet ID.
 - [implemented] `CMP-006` The root sheet shall be written as `<project_name>.kicad_sch`.
 - [implemented] `CMP-007` Non-root sheets shall be written as `<sheet_id>.kicad_sch`.
 - [implemented] `CMP-008` The compiler shall always write `<project_name>.kicad_pro`.
-- [partial] `CMP-009` `CompileEngine.compile` shall return the path to the root schematic file. The returned value is implemented for normal output, but the current internal flow can leave the root path unset in edge cases described by `GAP-022`.
+- [implemented] `CMP-009` `CompileEngine.compile` shall return the path to the root schematic file and shall report a structured write-stage error if no root sheet is written.
 
 ## Sheet Mapping And Connectivity
 
@@ -56,10 +56,10 @@
 - [implemented] `CMP-049` Circuit JSON shall provide an explicit way to mark a `SourceNet` as global; this global-net declaration shall be the authoritative project-specific definition.
 - [implemented] `CMP-050` Global-net detection shall not rely on substring matching such as `GND`, `5V`, or `3V3`.
 - [implemented] `CMP-051` KiCad power-symbol names extracted from the configured KiCad `power.kicad_sym` library may be used as a default global-net catalog when a project does not explicitly override global-net detection.
-- [partial] `CMP-052` The default KiCad power-symbol global-net catalog shall be treated as advisory and environment-dependent. Missing KiCad symbol libraries are logged, but validation does not yet report this condition.
+- [implemented] `CMP-052` The default KiCad power-symbol global-net catalog shall be treated as advisory and environment-dependent. Compile-ready validation shall warn when the catalog is unavailable and default catalog use is enabled.
 - [implemented] `CMP-053` A project shall be able to add custom global net names that are not present in KiCad's power symbol library.
 - [implemented] `CMP-054` A project shall be able to disable or override the default KiCad power-symbol global-net catalog for deterministic compilation.
-- [partial] `CMP-055` Global inter-sheet nets shall be represented in each affected child sheet with KiCad global labels or power symbols, and shall not require parent-sheet hierarchical pins. This is implemented when the affected source ports can be mapped to schematic ports.
+- [implemented] `CMP-055` Global inter-sheet nets shall be represented in each affected child sheet with KiCad global labels or power symbols, and shall not require parent-sheet hierarchical pins.
 - [implemented] `CMP-056` Non-global inter-sheet nets shall create hierarchical pins on each affected child sheet box and matching hierarchical labels inside each child sheet.
 - [implemented] `CMP-057` The root sheet shall connect matching non-global hierarchical sheet pins by generated net labels with the same text, not by direct wires between sheet pins.
 - [implemented] `CMP-058` Root-sheet labels generated for hierarchical sheet pins shall use the same text as the corresponding child-sheet `SchematicHierarchicalLabel`.
@@ -99,7 +99,7 @@
 - [implemented] `CMP-031` KiCad schematic output shall include version `20260306`, generator `eeschema`, generator version `10.0`, a UUID, and paper `A4`.
 - [implemented] `CMP-032` Grid units shall convert to millimeters using `1 grid = 0.127 mm`.
 - [implemented] `CMP-033` Millimeter values shall be formatted with four decimal places.
-- [partial] `CMP-034` Symbol library definitions shall be embedded under `lib_symbols` when component symbols can be loaded. Missing or invalid local KiCad libraries are logged and compilation continues as described by `GAP-031` and `GAP-032`.
+- [implemented] `CMP-034` Symbol library definitions shall be embedded under `lib_symbols` when component symbols can be loaded. Missing or invalid local KiCad libraries shall not prevent schematic generation.
 - [implemented] `CMP-035` Hierarchical sheet boxes shall become KiCad `sheet` expressions with Sheetname and Sheetfile properties.
 - [implemented] `CMP-036` Schematic components shall become KiCad `symbol` expressions.
 - [implemented] `CMP-037` Component reference text shall come from `SourceComponent.name` when available, otherwise `U?`.

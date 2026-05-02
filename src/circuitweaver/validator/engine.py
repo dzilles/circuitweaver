@@ -263,6 +263,9 @@ def _validate_compile_ready_profile(
     result: ValidationResult,
     profile: str,
 ) -> None:
+    from circuitweaver.compiler.global_nets import get_kicad_power_symbol_global_names
+    from circuitweaver.types import SourceProjectConfig
+
     source_components = [e for e in elements if isinstance(e, SourceComponent)]
     if not source_components:
         result.add_error(
@@ -278,6 +281,16 @@ def _validate_compile_ready_profile(
                 element_id=component.source_component_id,
                 profile=profile,
             )
+    config = next((e for e in elements if isinstance(e, SourceProjectConfig)), None)
+    use_default_globals = (
+        config.use_kicad_power_symbols_as_global_nets if config else True
+    )
+    if use_default_globals and not get_kicad_power_symbol_global_names():
+        result.add_warning(
+            "compile_ready_power_symbol_catalog",
+            "KiCad power-symbol global-net catalog is unavailable; only explicit project global nets can be used deterministically.",
+            profile=profile,
+        )
 
 
 def _validate_erc_ready_profile(result: ValidationResult, profile: str) -> None:

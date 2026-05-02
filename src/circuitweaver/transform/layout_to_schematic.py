@@ -5,8 +5,10 @@ Transforms Layout types (ELK graph with positions) into Schematic types
 """
 
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
+from circuitweaver.transform.source_to_layout import LayoutRegistry, get_effective_symbol_id
 from circuitweaver.types import (
     CircuitElement,
     LayoutNode,
@@ -25,7 +27,6 @@ from circuitweaver.types import (
     SourcePort,
     get_element_id,
 )
-from circuitweaver.transform.source_to_layout import LayoutRegistry, get_effective_symbol_id
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ class LayoutToSchematicTransform:
 
     def __init__(
         self,
-        symbol_map: Optional[Dict[str, Any]] = None,
+        symbol_map: dict[str, Any] | None = None,
         grid_size: float = 10.0,
     ):
         """Initialize the transform.
@@ -77,8 +78,8 @@ class LayoutToSchematicTransform:
         sheet_id: str,
         layout_result: LayoutNode,
         registry: LayoutRegistry,
-        elements: List[CircuitElement],
-    ) -> List[CircuitElement]:
+        elements: list[CircuitElement],
+    ) -> list[CircuitElement]:
         """Transform ELK layout results into Schematic elements.
 
         Args:
@@ -90,7 +91,7 @@ class LayoutToSchematicTransform:
         Returns:
             List of positioned Schematic elements.
         """
-        final_elements: List[CircuitElement] = []
+        final_elements: list[CircuitElement] = []
 
         def snap(v: float) -> float:
             return snap_to_grid(v, self.grid_size)
@@ -111,8 +112,8 @@ class LayoutToSchematicTransform:
         parent_y: float,
         sheet_id: str,
         registry: LayoutRegistry,
-        elements: List[CircuitElement],
-        final_elements: List[CircuitElement],
+        elements: list[CircuitElement],
+        final_elements: list[CircuitElement],
         snap: Callable[[float], float],
     ) -> None:
         """Process a layout node and create schematic elements."""
@@ -126,7 +127,7 @@ class LayoutToSchematicTransform:
         if isinstance(element, SourceComponent):
             self._build_component(
                 element, node, raw_x, raw_y, snapped_x, snapped_y,
-                sheet_id, elements, final_elements, snap,
+                sheet_id, registry, elements, final_elements, snap,
             )
             for child in node.children:
                 self._process_node(child, raw_x, raw_y, sheet_id, registry, elements, final_elements, snap)
@@ -157,11 +158,12 @@ class LayoutToSchematicTransform:
         node: LayoutNode,
         raw_x: float,
         raw_y: float,
-        snapped_x: float,
-        snapped_y: float,
+        _snapped_x: float,
+        _snapped_y: float,
         sheet_id: str,
-        elements: List[CircuitElement],
-        final_elements: List[CircuitElement],
+        registry: LayoutRegistry,
+        elements: list[CircuitElement],
+        final_elements: list[CircuitElement],
         snap: Callable[[float], float],
     ) -> None:
         """Build SchematicComponent and ports from a component node."""
@@ -184,6 +186,7 @@ class LayoutToSchematicTransform:
         comp_ports = [e for e in elements if isinstance(e, SourcePort) and e.source_component_id == nid]
         symbol_pins = {str(p.number): p for p in symbol.pins} if symbol else {}
         source_port_pins = set()
+        layout_ports = {p.id: p for p in node.ports}
 
         for port in comp_ports:
             pin_info = symbol_pins.get(str(port.pin_number)) or next(
@@ -193,18 +196,31 @@ class LayoutToSchematicTransform:
                 source_port_pins.add(str(pin_info.number))
                 px = snap(raw_x + (pin_info.grid_offset.x - symbol.bounding_box_min.x))
                 py = snap(raw_y + (pin_info.grid_offset.y - symbol.bounding_box_min.y))
+            else:
+                layout_port = layout_ports.get(f"{nid}:{port.pin_number}")
+                if layout_port is None:
+                    layout_port = layout_ports.get(f"{nid}:{port.name}")
+                if layout_port is None:
+                    layout_port = next(
+                        (p for p in layout_ports.values() if registry.get_element_by_layout_id(p.id) == port),
+                        None,
+                    )
+                if layout_port is None:
+                    continue
+                px = snap(raw_x + layout_port.x)
+                py = snap(raw_y + layout_port.y)
 
-                final_elements.append(SchematicPort(
-                    schematic_port_id=f"port_{get_element_id(port)}",
-                    source_port_id=port.source_port_id,
-                    sheet_id=sheet_id,
-                    center=Point(x=px, y=py),
-                ))
+            final_elements.append(SchematicPort(
+                schematic_port_id=f"port_{get_element_id(port)}",
+                source_port_id=port.source_port_id,
+                sheet_id=sheet_id,
+                center=Point(x=px, y=py),
+            ))
 
-                # Position attached no-connects
-                for nc in elements:
-                    if isinstance(nc, SchematicNoConnect) and nc.schematic_port_id == port.source_port_id:
-                        nc.position = Point(x=px, y=py)
+            # Position attached no-connects
+            for nc in elements:
+                if isinstance(nc, SchematicNoConnect) and nc.schematic_port_id == port.source_port_id:
+                    nc.position = Point(x=px, y=py)
 
         # Position no-connects for pins without source_ports
         for nc in elements:
@@ -226,8 +242,8 @@ class LayoutToSchematicTransform:
         snapped_x: float,
         snapped_y: float,
         sheet_id: str,
-        elements: List[CircuitElement],
-        final_elements: List[CircuitElement],
+        elements: list[CircuitElement],
+        final_elements: list[CircuitElement],
         snap: Callable[[float], float],
     ) -> None:
         """Build SchematicBox from a group node."""
@@ -272,8 +288,8 @@ class LayoutToSchematicTransform:
         parent_y: float,
         sheet_id: str,
         registry: LayoutRegistry,
-        elements: List[CircuitElement],
-        final_elements: List[CircuitElement],
+        elements: list[CircuitElement],
+        final_elements: list[CircuitElement],
         snap: Callable[[float], float],
     ) -> None:
         """Process edges recursively and create traces."""
