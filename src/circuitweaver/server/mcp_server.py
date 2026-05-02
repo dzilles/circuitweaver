@@ -32,8 +32,10 @@ def create_server(
     """
     server = Server("circuitweaver")
 
-    # Filter tools if specific ones are requested
     if enabled_tools:
+        unknown_tools = sorted(set(enabled_tools) - set(TOOL_REGISTRY))
+        if unknown_tools:
+            raise ValueError(f"Unknown MCP tool(s): {', '.join(unknown_tools)}")
         tools = {
             name: handler
             for name, handler in TOOL_REGISTRY.items()

@@ -107,6 +107,10 @@ def _tool_schema(tool_name: str) -> dict[str, object]:
     return TOOL_REGISTRY[tool_name].to_mcp_tool().inputSchema
 
 
+def _tool_payload(response) -> dict[str, object]:
+    return json.loads(response.root.content[0].text)
+
+
 def test_cli_001_root_command_is_named_circuitweaver():
     result = _runner().invoke(main, ["--help"])
     assert result.exit_code == 0
@@ -242,32 +246,34 @@ def test_cli_010_compile_exits_1_and_prints_traceback_on_failure(monkeypatch, tm
     assert "compile failed" in result.output
 
 
-def test_cli_011_erc_runs_kicad_erc_through_erc_checker(monkeypatch, tmp_path):
+def test_cli_011_erc_uses_unified_erc_flow_for_schematic_paths(monkeypatch, tmp_path):
     calls = {}
 
-    class FakeERCChecker:
-        def run(self, path):
-            calls["path"] = path
-            return {"is_valid": True, "errors": [], "warnings": []}
+    def fake_run_erc_for_path(file_path, output_dir=None, project_name=None, keep_generated=False):
+        calls.update(
+            file_path=file_path,
+            output_dir=output_dir,
+            project_name=project_name,
+            keep_generated=keep_generated,
+        )
+        from circuitweaver.results import ToolResult
 
-    import circuitweaver.erc.checker
+        return ToolResult(ok=True, summary="ERC PASSED")
 
-    monkeypatch.setattr(circuitweaver.erc.checker, "ERCChecker", FakeERCChecker)
+    monkeypatch.setattr("circuitweaver.erc.runner.run_erc_for_path", fake_run_erc_for_path)
+
     schematic = tmp_path / "board.kicad_sch"
     schematic.write_text("(kicad_sch)", encoding="utf-8")
     result = _runner().invoke(main, ["erc", str(schematic)])
     assert result.exit_code == 0
-    assert calls["path"] == schematic
+    assert calls["file_path"] == schematic
 
 
 def test_cli_012_erc_exits_1_if_erc_execution_raises(monkeypatch, tmp_path):
-    class FakeERCChecker:
-        def run(self, path):
-            raise RuntimeError("erc failed")
+    def fake_run_erc_for_path(*args, **kwargs):
+        raise RuntimeError("erc failed")
 
-    import circuitweaver.erc.checker
-
-    monkeypatch.setattr(circuitweaver.erc.checker, "ERCChecker", FakeERCChecker)
+    monkeypatch.setattr("circuitweaver.erc.runner.run_erc_for_path", fake_run_erc_for_path)
     schematic = tmp_path / "board.kicad_sch"
     schematic.write_text("(kicad_sch)", encoding="utf-8")
     result = _runner().invoke(main, ["erc", str(schematic)])
@@ -288,10 +294,10 @@ def test_cli_013_search_query_searches_kicad_parts(monkeypatch):
 
 
 def test_cli_014_search_supports_limit_defaulting_to_10(monkeypatch):
-    calls = {}
+    calls = []
 
     def fake_search_parts(query, limit=10):
-        calls["limit"] = limit
+        calls.append(limit)
         return []
 
     monkeypatch.setattr("circuitweaver.library.search_parts", fake_search_parts)
@@ -299,7 +305,7 @@ def test_cli_014_search_supports_limit_defaulting_to_10(monkeypatch):
     option_result = _runner().invoke(main, ["search", "resistor", "--limit", "3"])
     assert default_result.exit_code == 0
     assert option_result.exit_code == 0
-    assert calls["limit"] == 3
+    assert calls == [10, 3]
 
 
 def test_cli_015_pins_prints_symbol_pin_number_name_and_electrical_type(monkeypatch):
@@ -371,6 +377,16 @@ def test_cli_019_serve_supports_tools_comma_separated_allowlist(monkeypatch):
     result = _runner().invoke(main, ["serve", "--tools", "validate_circuit_json,run_erc"])
     assert result.exit_code == 0
     assert calls["enabled_tools"] == ["validate_circuit_json", "run_erc"]
+
+
+def test_cli_019_serve_unknown_tools_exit_with_clear_error(monkeypatch):
+    def fake_create_server(enabled_tools=None):
+        raise ValueError("Unknown MCP tool(s): missing_tool")
+
+    monkeypatch.setattr("circuitweaver.server.mcp_server.create_server", fake_create_server)
+    result = _runner().invoke(main, ["serve", "--tools", "missing_tool"])
+    assert result.exit_code == 1
+    assert "Unknown MCP tool(s): missing_tool" in result.stderr
 
 
 def test_cli_020_serve_supports_port_defaulting_to_3000(monkeypatch):
@@ -446,9 +462,9 @@ async def test_mcp_003_enabled_tools_exposes_only_matching_registry_tools():
 
 
 @pytest.mark.asyncio
-async def test_mcp_004_unknown_enabled_tool_names_are_silently_ignored():
-    tools = await _list_tools(create_server(enabled_tools=["validate_circuit_json", "missing_tool"]))
-    assert {tool.name for tool in tools} == {"validate_circuit_json"}
+async def test_mcp_004_unknown_enabled_tool_names_raise_value_error():
+    with pytest.raises(ValueError, match="Unknown MCP tool"):
+        create_server(enabled_tools=["validate_circuit_json", "missing_tool"])
 
 
 @pytest.mark.asyncio
@@ -481,6 +497,7 @@ def test_mcp_008_tool_parameters_convert_to_json_schema_properties_and_required_
     assert schema["type"] == "object"
     assert schema["properties"]["file_path"]["type"] == "string"
     assert schema["properties"]["debug"]["default"] is False
+    assert schema["properties"]["write_kicad"]["default"] is True
     assert schema["required"] == ["file_path"]
 
 
@@ -489,13 +506,19 @@ def test_mcp_020_search_kicad_parts_accepts_query_and_optional_limit():
     assert set(schema["properties"]) == {"query", "limit"}
     assert schema["required"] == ["query"]
     assert schema["properties"]["limit"]["default"] == 10
+    assert "case-insensitive" in schema["properties"]["query"]["description"]
+    assert "positive" in schema["properties"]["limit"]["description"]
 
 
 @pytest.mark.asyncio
-async def test_mcp_021_search_kicad_parts_returns_human_readable_results_or_no_results():
+async def test_mcp_021_search_kicad_parts_returns_structured_parts_or_no_results():
     response = await _call_tool(create_server(), "search_kicad_parts", {"query": "resistor", "limit": 1})
-    text = response.root.content[0].text
-    assert "Found" in text or "No results found" in text
+    payload = _tool_payload(response)
+    assert {"ok", "summary", "errors", "warnings", "outputs", "parts"}.issubset(payload)
+    assert payload["ok"] is True
+    if payload["parts"]:
+        part = payload["parts"][0]
+        assert {"library_id", "library_name", "symbol_name", "description", "keywords", "footprint", "datasheet"}.issubset(part)
 
 
 def test_mcp_022_get_symbol_pins_accepts_symbol_id():
@@ -505,7 +528,7 @@ def test_mcp_022_get_symbol_pins_accepts_symbol_id():
 
 
 @pytest.mark.asyncio
-async def test_mcp_023_get_symbol_pins_returns_markdown_table(monkeypatch):
+async def test_mcp_023_get_symbol_pins_returns_structured_pin_records(monkeypatch):
     from circuitweaver.library.pinout import Pin, SymbolInfo
 
     symbol = SymbolInfo(
@@ -517,20 +540,29 @@ async def test_mcp_023_get_symbol_pins_returns_markdown_table(monkeypatch):
     )
     monkeypatch.setattr("circuitweaver.library.get_symbol_info", lambda symbol_id: symbol)
     response = await _call_tool(create_server(), "get_symbol_pins", {"symbol_id": "Device:R"})
-    text = response.root.content[0].text
-    assert "| Pin #" in text
-    assert "| 1" in text
-    assert "passive" in text
+    payload = _tool_payload(response)
+    assert payload["ok"] is True
+    assert payload["pins"] == [
+        {
+            "number": "1",
+            "name": "A",
+            "electrical_type": "passive",
+            "direction": "left",
+            "grid_offset": {"x": 0, "y": 0},
+        }
+    ]
 
 
 @pytest.mark.asyncio
-async def test_mcp_024_get_symbol_pins_returns_error_string_when_lookup_fails(monkeypatch):
+async def test_mcp_024_get_symbol_pins_returns_structured_error_when_lookup_fails(monkeypatch):
     def raise_value_error(symbol_id):
         raise ValueError("missing")
 
     monkeypatch.setattr("circuitweaver.library.get_symbol_info", raise_value_error)
     response = await _call_tool(create_server(), "get_symbol_pins", {"symbol_id": "Missing:Symbol"})
-    assert response.root.content[0].text.startswith("Error:")
+    payload = _tool_payload(response)
+    assert payload["ok"] is False
+    assert payload["errors"][0]["message"] == "missing"
 
 
 def test_mcp_025_validate_circuit_json_accepts_file_path():
@@ -544,30 +576,45 @@ async def test_mcp_026_validate_circuit_json_rejects_invalid_missing_and_non_fil
     server = create_server()
     missing = await _call_tool(server, "validate_circuit_json", {"file_path": str(tmp_path / "missing.json")})
     non_file = await _call_tool(server, "validate_circuit_json", {"file_path": str(tmp_path)})
-    assert "File not found" in missing.root.content[0].text
-    assert "Not a file" in non_file.root.content[0].text
+    assert _tool_payload(missing)["errors"][0]["code"] == "file_not_found"
+    assert _tool_payload(non_file)["errors"][0]["code"] == "not_a_file"
 
 
 @pytest.mark.asyncio
 async def test_mcp_027_validate_circuit_json_returns_success_when_no_errors(tmp_path):
     circuit_file = _write_json(tmp_path / "valid.json", _source_only_circuit())
     response = await _call_tool(create_server(), "validate_circuit_json", {"file_path": str(circuit_file)})
-    assert "SUCCESS" in response.root.content[0].text
+    payload = _tool_payload(response)
+    assert payload["ok"] is True
+    assert payload["validation"]["is_valid"] is True
 
 
 @pytest.mark.asyncio
 async def test_mcp_028_validate_circuit_json_returns_failed_and_errors_when_errors_exist(tmp_path):
     circuit_file = _write_json(tmp_path / "invalid.json", _invalid_circuit())
     response = await _call_tool(create_server(), "validate_circuit_json", {"file_path": str(circuit_file)})
-    text = response.root.content[0].text
-    assert "FAILED" in text
-    assert "non-existent source_component" in text
+    payload = _tool_payload(response)
+    assert payload["ok"] is False
+    assert payload["validation"]["is_valid"] is False
+    assert "non-existent source_component" in payload["errors"][0]["message"]
 
 
-def test_mcp_029_create_schematic_accepts_file_path_and_optional_debug():
+def test_mcp_029_create_schematic_accepts_input_path_and_output_control_options():
     schema = _tool_schema("create_schematic")
-    assert set(schema["properties"]) == {"file_path", "debug"}
+    assert set(schema["properties"]) == {
+        "file_path",
+        "output_dir",
+        "project_name",
+        "write_schematic_json",
+        "write_kicad",
+        "write_debug_layout",
+        "debug",
+    }
     assert schema["required"] == ["file_path"]
+    assert "input Circuit JSON" in schema["properties"]["file_path"]["description"]
+    assert schema["properties"]["write_schematic_json"]["default"] is True
+    assert schema["properties"]["write_kicad"]["default"] is True
+    assert schema["properties"]["write_debug_layout"]["default"] is False
     assert schema["properties"]["debug"]["default"] is False
 
 
@@ -595,15 +642,32 @@ async def test_mcp_030_create_schematic_reads_json_runs_layout_and_writes_output
 
     monkeypatch.setattr("circuitweaver.compiler.engine.CompileEngine", FakeCompileEngine)
     circuit_file = _write_json(tmp_path / "demo.json", _source_only_circuit())
-    response = await _call_tool(create_server(), "create_schematic", {"file_path": str(circuit_file)})
-    assert "SUCCESS" in response.root.content[0].text
-    assert (tmp_path / "demo_schematic.json").exists()
-    assert (tmp_path / "demo.kicad_sch").exists()
-    assert (tmp_path / "demo.kicad_pro").exists()
+    out_dir = tmp_path / "out"
+    response = await _call_tool(
+        create_server(),
+        "create_schematic",
+        {
+            "file_path": str(circuit_file),
+            "output_dir": str(out_dir),
+            "project_name": "board",
+            "write_schematic_json": True,
+            "write_kicad": True,
+        },
+    )
+    payload = _tool_payload(response)
+    assert payload["ok"] is True
+    assert (out_dir / "board_schematic.json").exists()
+    assert (out_dir / "board.kicad_sch").exists()
+    assert (out_dir / "board.kicad_pro").exists()
+    assert {Path(output["path"]).name for output in payload["outputs"]} == {
+        "board_schematic.json",
+        "board.kicad_sch",
+        "board.kicad_pro",
+    }
 
 
 @pytest.mark.asyncio
-async def test_mcp_031_create_schematic_debug_true_writes_elk_debug_files(monkeypatch, tmp_path):
+async def test_mcp_031_create_schematic_write_debug_layout_writes_elk_debug_files(monkeypatch, tmp_path):
     class FakeCompileEngine:
         def layout(self, elements, debug_dir=None, debug_basename=None):
             if debug_dir and debug_basename:
@@ -626,41 +690,58 @@ async def test_mcp_031_create_schematic_debug_true_writes_elk_debug_files(monkey
     monkeypatch.setattr("circuitweaver.compiler.engine.CompileEngine", FakeCompileEngine)
     circuit_file = _write_json(tmp_path / "demo.json", _source_only_circuit())
     response = await _call_tool(
-        create_server(), "create_schematic", {"file_path": str(circuit_file), "debug": True}
+        create_server(), "create_schematic", {"file_path": str(circuit_file), "write_debug_layout": True}
     )
-    assert "layout_in" in response.root.content[0].text
+    payload = _tool_payload(response)
+    assert any(output["path"].endswith("_layout_in.json") for output in payload["outputs"])
     assert (tmp_path / "demo_layout_in.json").exists()
     assert (tmp_path / "demo_layout_out.json").exists()
 
 
 def test_mcp_032_run_erc_accepts_file_path():
     schema = _tool_schema("run_erc")
-    assert set(schema["properties"]) == {"file_path"}
+    assert {"file_path", "output_dir", "project_name", "keep_generated"}.issubset(schema["properties"])
     assert schema["required"] == ["file_path"]
 
 
 @pytest.mark.asyncio
-async def test_mcp_033_run_erc_reads_json_compiles_temporary_and_returns_status(monkeypatch, tmp_path):
-    class FakeCompileEngine:
-        def compile(self, elements, output_dir, project_name):
-            output_file = output_dir / f"{project_name}.kicad_sch"
-            output_file.write_text("(kicad_sch)", encoding="utf-8")
-            return output_file
+async def test_mcp_033_run_erc_uses_unified_flow_and_returns_structured_status(monkeypatch, tmp_path):
+    from circuitweaver.results import OutputArtifact, ToolResult
 
-        def run_erc(self, schematic_path):
-            return {"is_valid": True, "errors": [], "warnings": []}
+    calls = {}
 
-    monkeypatch.setattr("circuitweaver.compiler.engine.CompileEngine", FakeCompileEngine)
+    def fake_run_erc_for_path(file_path, output_dir=None, project_name=None, keep_generated=False):
+        calls.update(
+            file_path=file_path,
+            output_dir=output_dir,
+            project_name=project_name,
+            keep_generated=keep_generated,
+        )
+        return ToolResult(
+            ok=True,
+            summary="ERC passed",
+            outputs=[OutputArtifact(kind="erc_schematic", path=file_path)],
+        )
+
+    monkeypatch.setattr("circuitweaver.server.tool_registry.run_erc_for_path", fake_run_erc_for_path)
     circuit_file = _write_json(tmp_path / "demo.json", _source_only_circuit())
-    response = await _call_tool(create_server(), "run_erc", {"file_path": str(circuit_file)})
-    assert "SUCCESS: ERC passed" in response.root.content[0].text
+    response = await _call_tool(
+        create_server(),
+        "run_erc",
+        {"file_path": str(circuit_file), "output_dir": str(tmp_path / "erc"), "project_name": "board"},
+    )
+    payload = _tool_payload(response)
+    assert payload["ok"] is True
+    assert payload["erc"]["is_valid"] is True
+    assert calls["file_path"] == circuit_file
+    assert calls["output_dir"] == tmp_path / "erc"
 
 
 @pytest.mark.asyncio
-async def test_mcp_034_mcp_does_not_expose_generic_file_editing_tools():
+async def test_mcp_034_mcp_exposes_only_domain_tools_from_registry():
     tools = await _list_tools(create_server())
     names = {tool.name for tool in tools}
-    assert {"read_file", "write_file", "edit_file"}.isdisjoint(names)
+    assert names == set(TOOL_REGISTRY)
 
 
 @pytest.mark.asyncio
@@ -841,10 +922,10 @@ def test_mcp_076_custom_http_app_exposes_post_mcp_endpoint():
     assert any(path == "/mcp" and "POST" in methods for path, methods in routes)
 
 
-def test_mcp_077_custom_http_app_exposes_sse_endpoint():
+def test_mcp_077_custom_http_app_does_not_expose_placeholder_sse_endpoint():
     app = create_http_app(create_server())
     route_paths = {route.path for route in app.routes}
-    assert "/mcp/sse" in route_paths
+    assert "/mcp/sse" not in route_paths
 
 
 @pytest.mark.asyncio

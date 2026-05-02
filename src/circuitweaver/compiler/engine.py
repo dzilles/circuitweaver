@@ -13,12 +13,14 @@ import logging
 import os
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from circuitweaver.compiler.auto_router import AutoRouter
 from circuitweaver.compiler.global_nets import GlobalNetResolver
 from circuitweaver.compiler.layout_quality import LayoutQualityChecker, LayoutQualityReport
 from circuitweaver.library.pinout import get_symbol_info
+from circuitweaver.project import CircuitProject, KiCadProject
+from circuitweaver.results import Diagnostic, OutputArtifact, StageResult
 from circuitweaver.transform import (
     LayoutToSchematicTransform,
     SchematicToSExprTransform,
@@ -39,10 +41,17 @@ from circuitweaver.types import (
     get_element_id,
     s_expr_serialize,
 )
+from circuitweaver.validator.result import ValidationResult
 
 logger = logging.getLogger(__name__)
 
 DEBUG_ELK = os.environ.get("CIRCUITWEAVER_DEBUG_ELK", "").lower() in ("1", "true", "yes")
+
+
+def _format_stage_errors(result: StageResult[Any]) -> str:
+    if not result.errors:
+        return f"Stage '{result.stage}' failed without a structured error."
+    return "; ".join(f"{d.code}: {d.message}" for d in result.errors)
 
 
 class CompileEngine:
@@ -60,6 +69,181 @@ class CompileEngine:
         """
         self.router = AutoRouter(helper_path=Path(helper_path) if helper_path else None)
         self.kicad_cli_path = kicad_cli_path
+
+    def project_from_elements(
+        self,
+        elements: List[CircuitElement],
+        name: str = "project",
+        source_path: Optional[Path] = None,
+    ) -> CircuitProject:
+        """Create a CircuitProject from parsed circuit elements."""
+        return CircuitProject(elements=list(elements), name=name, source_path=source_path)
+
+    def parse_file(self, file_path: Path) -> StageResult[CircuitProject]:
+        """Parse a Circuit JSON file into a CircuitProject."""
+        from circuitweaver.io.json import read_circuit
+
+        result: StageResult[CircuitProject] = StageResult(stage="parse")
+        try:
+            elements = read_circuit(file_path)
+        except Exception as e:
+            result.add_error("parse_failed", str(e), location={"path": str(file_path)})
+            return result
+
+        result.value = self.project_from_elements(
+            elements,
+            name=file_path.stem,
+            source_path=file_path,
+        )
+        result.artifacts.append(
+            OutputArtifact(kind="input_json", path=file_path, name=file_path.name)
+        )
+        return result
+
+    def validate_project(self, project: CircuitProject) -> StageResult[CircuitProject]:
+        """Validate a project and return structured diagnostics."""
+        result: StageResult[CircuitProject] = StageResult(stage="validate", value=project)
+
+        if project.source_path:
+            from circuitweaver.validator import validate_circuit_file
+
+            validation = validate_circuit_file(project.source_path)
+        else:
+            validation = ValidationResult()
+
+        for error in validation.errors:
+            result.diagnostics.append(
+                Diagnostic(
+                    severity="error",
+                    code=error.rule,
+                    message=error.message,
+                    element_id=error.element_id,
+                    location=error.location,
+                    stage="validate",
+                )
+            )
+        for warning in validation.warnings:
+            result.diagnostics.append(
+                Diagnostic(
+                    severity="warning",
+                    code=warning.rule,
+                    message=warning.message,
+                    element_id=warning.element_id,
+                    location=warning.location,
+                    stage="validate",
+                )
+            )
+        return result
+
+    def layout_project(
+        self,
+        project: CircuitProject,
+        debug_dir: Optional[Path] = None,
+        debug_basename: Optional[str] = None,
+    ) -> StageResult[CircuitProject]:
+        """Run the layout stage and return a project with schematic elements."""
+        result: StageResult[CircuitProject] = StageResult(stage="layout")
+        try:
+            elements = self.layout(
+                project.elements,
+                debug_dir=debug_dir,
+                debug_basename=debug_basename,
+            )
+        except Exception as e:
+            result.add_error("layout_failed", str(e))
+            return result
+
+        updated = project.with_elements(elements)
+        result.value = updated
+        result.artifacts.append(
+            OutputArtifact(
+                kind="schematic_elements",
+                name="schematic",
+                metadata={"element_count": len(updated.schematic_elements)},
+            )
+        )
+        return result
+
+    def schematic_project(self, project: CircuitProject) -> StageResult[CircuitProject]:
+        """Ensure the project has schematic elements."""
+        if project.has_schematic_layer():
+            result: StageResult[CircuitProject] = StageResult(stage="schematic", value=project)
+            result.artifacts.append(
+                OutputArtifact(
+                    kind="schematic_elements",
+                    name="schematic",
+                    metadata={"element_count": len(project.schematic_elements)},
+                )
+            )
+            return result
+        return self.layout_project(project)
+
+    def kicad_project(self, project: CircuitProject) -> StageResult[KiCadProject]:
+        """Transform schematic elements to in-memory KiCad S-expressions."""
+        result: StageResult[KiCadProject] = StageResult(stage="kicad_transform")
+        if not project.has_schematic_layer():
+            result.add_error(
+                "missing_schematic_layer",
+                "Project has no schematic elements. Run the schematic/layout stage first.",
+            )
+            return result
+
+        source_components: Dict[str, SourceComponent] = project.source_components
+        transform = SchematicToSExprTransform()
+        schematics = {
+            sheet_id: transform.transform(project.elements, sheet_id, source_components)
+            for sheet_id in project.sheet_ids
+        }
+        project_content = transform.transform_project(project.name, list(project.sheet_ids))
+        result.value = KiCadProject(
+            project=project,
+            schematics=schematics,
+            project_file_content=project_content,
+        )
+        for sheet_id in sorted(schematics):
+            filename = (
+                f"{project.name}.kicad_sch" if sheet_id == "root" else f"{sheet_id}.kicad_sch"
+            )
+            result.artifacts.append(OutputArtifact(kind="kicad_schematic_sexpr", name=filename))
+        result.artifacts.append(
+            OutputArtifact(kind="kicad_project_json", name=f"{project.name}.kicad_pro")
+        )
+        return result
+
+    def write_kicad(
+        self,
+        kicad_project: KiCadProject,
+        output_dir: Path,
+    ) -> StageResult[Path]:
+        """Write in-memory KiCad artifacts to disk."""
+        result: StageResult[Path] = StageResult(stage="write")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        root_sch_file = None
+        for sheet_id, sexp in kicad_project.schematics.items():
+            if sheet_id == "root":
+                filename = f"{kicad_project.project.name}.kicad_sch"
+                root_sch_file = output_dir / filename
+            else:
+                filename = f"{sheet_id}.kicad_sch"
+            path = output_dir / filename
+            path.write_text(s_expr_serialize(sexp))
+            result.artifacts.append(
+                OutputArtifact(kind="kicad_schematic", path=path, name=filename)
+            )
+
+        pro_filename = f"{kicad_project.project.name}.kicad_pro"
+        pro_path = output_dir / pro_filename
+        pro_path.write_text(kicad_project.project_file_content)
+        result.artifacts.append(
+            OutputArtifact(kind="kicad_project", path=pro_path, name=pro_filename)
+        )
+
+        if root_sch_file is None:
+            result.add_error("missing_root_sheet", "No root schematic was generated.")
+            return result
+        result.value = root_sch_file
+        return result
 
     def compile(
         self,
@@ -81,53 +265,23 @@ class CompileEngine:
         Returns:
             Path to the root schematic file.
         """
-        output_dir.mkdir(parents=True, exist_ok=True)
+        project = self.project_from_elements(elements, name=project_name)
+        schematic_result = self.schematic_project(project)
+        if not schematic_result.ok or schematic_result.value is None:
+            raise RuntimeError(_format_stage_errors(schematic_result))
 
-        # Run layout if needed
-        has_layout = any(e.type.startswith("schematic_") for e in elements)
-        if not has_layout:
-            logger.info("No layout found, running auto-layout...")
-            elements = self.layout(elements)
-        else:
-            logger.info("Layout found in input, skipping auto-layout.")
+        kicad_result = self.kicad_project(schematic_result.value)
+        if not kicad_result.ok or kicad_result.value is None:
+            raise RuntimeError(_format_stage_errors(kicad_result))
 
-        # Identify all sheets
-        all_sheet_ids: Set[str] = set()
-        for e in elements:
-            if hasattr(e, "sheet_id"):
-                all_sheet_ids.add(e.sheet_id)
-        if not all_sheet_ids:
-            all_sheet_ids.add("root")
+        write_result = self.write_kicad(kicad_result.value, output_dir)
+        if not write_result.ok or write_result.value is None:
+            raise RuntimeError(_format_stage_errors(write_result))
 
-        # Prepare source components map
-        source_components: Dict[str, SourceComponent] = {
-            e.source_component_id: e for e in elements if isinstance(e, SourceComponent)
-        }
-
-        # Transform and write each sheet
-        transform = SchematicToSExprTransform()
-        root_sch_file = None
-
-        for sheet_id in all_sheet_ids:
-            sexp = transform.transform(elements, sheet_id, source_components)
-            content = s_expr_serialize(sexp)
-
-            if sheet_id == "root":
-                filename = f"{project_name}.kicad_sch"
-                root_sch_file = output_dir / filename
-            else:
-                filename = f"{sheet_id}.kicad_sch"
-
-            (output_dir / filename).write_text(content)
-            logger.info(f"Wrote sheet '{sheet_id}' to {output_dir / filename}")
-
-        # Write project file
-        pro_content = transform.transform_project(project_name, list(all_sheet_ids))
-        pro_file = output_dir / f"{project_name}.kicad_pro"
-        pro_file.write_text(pro_content)
-        logger.info(f"Wrote project to {pro_file}")
-
-        return root_sch_file
+        for artifact in write_result.artifacts:
+            if artifact.path:
+                logger.info(f"Wrote {artifact.kind} to {artifact.path}")
+        return write_result.value
 
     def layout(
         self,

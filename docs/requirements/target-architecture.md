@@ -12,19 +12,25 @@ Status flags:
 
 ## Compiler Architecture
 
-- [missing] `ARCH-001` The compiler shall expose separate parse, validate, layout, schematic, KiCad transform, and write stages.
-- [missing] `ARCH-002` The compiler shall provide a pure in-memory pipeline that can run through schematic and KiCad S-expression generation without writing files.
-- [missing] `ARCH-003` File-writing shall be isolated in an explicit output stage.
+- [partial] `ARCH-001` The compiler shall expose separate parse, validate, layout, schematic, KiCad transform, and write stages.
+  `CompileEngine` exposes stage methods for parse, validate, layout, schematic, KiCad transform, and write. Validation is still path-backed when using existing validation rules, and the legacy `compile` wrapper remains.
+- [implemented] `ARCH-002` The compiler shall provide a pure in-memory pipeline that can run through schematic and KiCad S-expression generation without writing files.
+  `CompileEngine.kicad_project()` returns in-memory schematic S-expressions and project JSON content.
+- [partial] `ARCH-003` File-writing shall be isolated in an explicit output stage.
+  KiCad output writing is isolated in `CompileEngine.write_kicad()`. ELK debug files can still be written by the layout stage when debug paths or `CIRCUITWEAVER_DEBUG_ELK` are used.
 - [missing] `ARCH-004` The compiler shall not skip auto-layout solely because any schematic element is present; it shall validate whether the schematic layer is complete for the requested operation.
-- [missing] `ARCH-005` Pipeline stages shall return structured result objects instead of relying on exceptions and side effects for normal failure reporting.
-- [missing] `ARCH-006` The compilation pipeline shall expose intermediate artifacts for tests without requiring debug files on disk.
+- [partial] `ARCH-005` Pipeline stages shall return structured result objects instead of relying on exceptions and side effects for normal failure reporting.
+  New stage methods return `StageResult` objects. Existing lower-level layout, routing, symbol lookup, and compatibility APIs still raise exceptions for some failures.
+- [partial] `ARCH-006` The compilation pipeline shall expose intermediate artifacts for tests without requiring debug files on disk.
+  Stage results expose schematic and KiCad artifact metadata. Raw ELK input/output artifacts are still only available through debug files.
 
 ## Project Model
 
-- [missing] `ARCH-020` CircuitWeaver shall provide a first-class `CircuitProject` object.
-- [missing] `ARCH-021` `CircuitProject` shall separate source elements, schematic elements, generated layout artifacts, and project metadata.
-- [missing] `ARCH-022` Pipeline stages shall accept and return `CircuitProject` or dedicated stage result types instead of passing a raw `list[CircuitElement]` through all stages.
-- [missing] `ARCH-023` `CircuitProject` shall provide typed accessors for source components, ports, nets, traces, groups, and schematic elements.
+- [implemented] `ARCH-020` CircuitWeaver shall provide a first-class `CircuitProject` object.
+- [implemented] `ARCH-021` `CircuitProject` shall separate source elements, schematic elements, generated layout artifacts, and project metadata.
+- [partial] `ARCH-022` Pipeline stages shall accept and return `CircuitProject` or dedicated stage result types instead of passing a raw `list[CircuitElement]` through all stages.
+  New stage methods use `CircuitProject` and `StageResult`. Legacy transform internals still use `list[CircuitElement]`.
+- [implemented] `ARCH-023` `CircuitProject` shall provide typed accessors for source components, ports, nets, traces, groups, and schematic elements.
 
 ## Validation Profiles
 
@@ -38,22 +44,22 @@ Status flags:
 
 ## Structured MCP Results
 
-- [missing] `MCPR-001` MCP tools shall return structured result objects.
-- [missing] `MCPR-002` Structured MCP results shall include `ok`, `errors`, `warnings`, and `outputs`.
-- [missing] `MCPR-003` Human-readable text may be included in structured MCP results, but shall not be the only machine-readable result.
-- [missing] `MCPR-004` `search_kicad_parts` shall return structured part records with library ID, library name, symbol name, description, keywords, footprint, and datasheet fields when available.
-- [missing] `MCPR-005` `get_symbol_pins` shall return structured pin records with number, name, electrical type, direction, and grid offset.
-- [missing] `MCPR-006` `validate_circuit_json` shall return structured validation errors and warnings equivalent to `ValidationResult.to_dict`.
-- [missing] `MCPR-007` `create_schematic` shall return structured output file paths and generated artifact metadata.
-- [missing] `MCPR-008` `run_erc` shall return structured ERC errors, warnings, and generated temporary artifact metadata.
+- [implemented] `MCPR-001` MCP tools shall return structured result objects.
+- [implemented] `MCPR-002` Structured MCP results shall include `ok`, `errors`, `warnings`, and `outputs`.
+- [implemented] `MCPR-003` Human-readable text may be included in structured MCP results, but shall not be the only machine-readable result.
+- [implemented] `MCPR-004` `search_kicad_parts` shall return structured part records with library ID, library name, symbol name, description, keywords, footprint, and datasheet fields when available.
+- [implemented] `MCPR-005` `get_symbol_pins` shall return structured pin records with number, name, electrical type, direction, and grid offset.
+- [implemented] `MCPR-006` `validate_circuit_json` shall return structured validation errors and warnings equivalent to `ValidationResult.to_dict`.
+- [implemented] `MCPR-007` `create_schematic` shall return structured output file paths and generated artifact metadata.
+- [implemented] `MCPR-008` `run_erc` shall return structured ERC errors, warnings, and generated temporary artifact metadata.
 
 ## Explicit Output Control
 
-- [missing] `ARCH-040` `create_schematic` shall accept an explicit output directory.
-- [missing] `ARCH-041` `create_schematic` shall accept an explicit project name.
-- [missing] `ARCH-042` `create_schematic` shall provide explicit flags for writing schematic JSON, KiCad files, and debug layout files.
-- [missing] `ARCH-043` MCP tools that write files shall report every created or modified path in a structured output list.
-- [missing] `ARCH-044` MCP tools shall avoid surprising writes beside the input file unless the caller explicitly requests that behavior or no output directory is provided.
+- [implemented] `ARCH-040` `create_schematic` shall accept an explicit output directory.
+- [implemented] `ARCH-041` `create_schematic` shall accept an explicit project name.
+- [implemented] `ARCH-042` `create_schematic` shall provide explicit flags for writing schematic JSON, KiCad files, and debug layout files.
+- [implemented] `ARCH-043` MCP tools that write files shall report every created or modified path in a structured output list.
+- [implemented] `ARCH-044` MCP tools shall avoid surprising writes beside the input file unless the caller explicitly requests that behavior or no output directory is provided.
 
 ## Environment Diagnostics
 
@@ -68,17 +74,18 @@ Status flags:
 
 ## HTTP MCP Transport
 
-- [missing] `ARCH-060` HTTP MCP support shall use an official MCP SDK Streamable HTTP transport or another standards-compliant MCP HTTP transport.
+- [partial] `ARCH-060` HTTP MCP support shall use an official MCP SDK Streamable HTTP transport or another standards-compliant MCP HTTP transport.
+  The current implementation retains a simplified JSON-RPC compatibility endpoint because the local environment does not provide an inspectable MCP SDK HTTP transport.
 - [missing] `ARCH-061` Hosted HTTP MCP support shall support authentication hooks.
 - [missing] `ARCH-062` Hosted HTTP MCP support shall support request limits or quota hooks.
-- [missing] `ARCH-063` The placeholder SSE endpoint shall be removed or replaced with a functional protocol endpoint.
+- [implemented] `ARCH-063` The placeholder SSE endpoint shall be removed or replaced with a functional protocol endpoint.
 
 ## ERC Behavior
 
-- [missing] `ARCH-080` CLI and MCP ERC behavior shall use a unified input model.
-- [missing] `ARCH-081` ERC shall support running from a Circuit JSON input by compiling to a controlled output or temporary directory.
-- [missing] `ARCH-082` ERC shall support running from an existing `.kicad_sch` path.
-- [missing] `ARCH-083` ERC result objects shall use the same structured result schema across CLI, MCP, and Python API entry points.
+- [implemented] `ARCH-080` CLI and MCP ERC behavior shall use a unified input model.
+- [implemented] `ARCH-081` ERC shall support running from a Circuit JSON input by compiling to a controlled output or temporary directory.
+- [implemented] `ARCH-082` ERC shall support running from an existing `.kicad_sch` path.
+- [implemented] `ARCH-083` ERC result objects shall use the same structured result schema across CLI, MCP, and Python API entry points.
 
 ## Testability and Determinism
 

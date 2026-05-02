@@ -10,7 +10,6 @@ from typing import Any
 
 try:
     from fastapi import FastAPI, Request, Response
-    from sse_starlette.sse import EventSourceResponse
 except ImportError:
     raise ImportError(
         "HTTP transport requires additional dependencies. "
@@ -74,22 +73,6 @@ def create_http_app(server: Server) -> FastAPI:
             content=response,
             media_type="application/json",
         )
-
-    @app.get("/mcp/sse")
-    async def mcp_sse(_request: Request) -> EventSourceResponse:
-        """Server-Sent Events endpoint for MCP streaming.
-
-        This endpoint provides real-time updates via SSE.
-        """
-
-        async def event_generator():
-            # Placeholder for SSE event generation
-            yield {
-                "event": "connected",
-                "data": '{"status": "connected"}',
-            }
-
-        return EventSourceResponse(event_generator())
 
     return app
 

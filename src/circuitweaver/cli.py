@@ -160,9 +160,79 @@ def check_layout(file_path: str, output_format: str) -> None:
 
 
 @main.command()
+@click.argument("file_path", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Directory for generated KiCad files when input is Circuit JSON.",
+)
+@click.option("--name", "-n", default=None, help="Project name when input is Circuit JSON.")
+@click.option(
+    "--keep-generated",
+    is_flag=True,
+    help="Keep generated ERC input artifacts when possible.",
+)
+@click.option(
+    "--output-format",
+    "-f",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format for ERC results.",
+)
+def erc(
+    file_path: Path,
+    output_dir: Path | None,
+    name: str | None,
+    keep_generated: bool,
+    output_format: str,
+) -> None:
+    """Run KiCad Electrical Rules Check (ERC) on Circuit JSON or a schematic."""
+    import json
+
+    from circuitweaver.erc.runner import run_erc_for_path
+
+    console.print(f"[bold blue]Running ERC on[/bold blue] {file_path}...")
+
+    try:
+        result = run_erc_for_path(
+            file_path,
+            output_dir=output_dir,
+            project_name=name,
+            keep_generated=keep_generated,
+        )
+
+        if output_format == "json":
+            click.echo(json.dumps(result.to_dict(), indent=2))
+        else:
+            if result.ok:
+                console.print(f"[bold green]ERC PASSED:[/bold green] {result.summary}")
+            else:
+                console.print(f"[bold red]ERC FAILED:[/bold red] {result.summary}")
+
+            if result.errors:
+                console.print("\n[bold red]Errors:[/bold red]")
+                for err in result.errors:
+                    console.print(f"  - {err.message}")
+
+            if result.warnings:
+                console.print("\n[bold yellow]Warnings:[/bold yellow]")
+                for warn in result.warnings:
+                    console.print(f"  - {warn.message}")
+
+        if not result.ok:
+            sys.exit(1)
+
+    except Exception as e:
+        console.print(f"\n[bold red]FAILED to run ERC:[/bold red] {e}")
+        sys.exit(1)
+
+
+@main.command("erc-schematic")
 @click.argument("schematic_path", type=click.Path(exists=True))
-def erc(schematic_path: str):
-    """Run KiCad Electrical Rules Check (ERC) on a schematic."""
+def erc_schematic(schematic_path: str):
+    """Deprecated alias for running ERC on a KiCad schematic."""
     from pathlib import Path
 
     from circuitweaver.erc.checker import ERCChecker
@@ -285,7 +355,11 @@ def serve(transport: str, tools: str | None, port: int, host: str) -> None:
     error_console.print(
         f"[bold blue]Starting CircuitWeaver MCP server ({transport})...[/bold blue]"
     )
-    server = create_server(enabled_tools=enabled_tools)
+    try:
+        server = create_server(enabled_tools=enabled_tools)
+    except ValueError as e:
+        error_console.print(f"[bold red]Error:[/bold red] {e}")
+        sys.exit(1)
     run_server(server, transport=transport, port=port, host=host)
 
 

@@ -3,11 +3,16 @@
 This module defines the registry of all available tools and their handlers.
 """
 
+import json
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from mcp.types import Tool
+
+from circuitweaver.erc.runner import run_erc_for_path
+from circuitweaver.results import Diagnostic, OutputArtifact, ToolResult
 
 
 @dataclass
@@ -73,24 +78,59 @@ class ToolHandler:
 # =============================================================================
 
 
+def _result_json(result: ToolResult) -> str:
+    """Serialize a structured tool result for MCP text content."""
+    return json.dumps(result.to_dict(), indent=2)
+
+
+def _error_result(code: str, message: str, stage: str, path: str | None = None) -> str:
+    return _result_json(
+        ToolResult(
+            ok=False,
+            summary=message,
+            errors=[
+                Diagnostic(
+                    severity="error",
+                    code=code,
+                    message=message,
+                    location={"path": path} if path is not None else None,
+                    stage=stage,
+                )
+            ],
+        )
+    )
+
+
 async def search_kicad_parts(query: str, limit: int = 10) -> str:
     """Search KiCad component libraries."""
     from circuitweaver.library import search_parts
 
+    if limit < 1:
+        return _error_result(
+            "invalid_limit",
+            "limit must be a positive integer.",
+            "search_kicad_parts",
+        )
+
     results = search_parts(query, limit=limit)
-    if not results:
-        return f"No results found for '{query}'"
-
-    lines = [f"Found {len(results)} results for '{query}':\n"]
-    for part in results:
-        lines.append(f"- {part.library_id}")
-        if part.description:
-            lines.append(f"  Description: {part.description}")
-        if part.default_footprint:
-            lines.append(f"  Footprint: {part.default_footprint}")
-        lines.append("")
-
-    return "\n".join(lines)
+    parts = [
+        {
+            "library_id": part.library_id,
+            "library_name": part.library_name,
+            "symbol_name": part.symbol_name,
+            "description": part.description,
+            "keywords": part.keywords,
+            "footprint": part.default_footprint,
+            "datasheet": part.datasheet,
+        }
+        for part in results
+    ]
+    summary = (
+        f"Found {len(parts)} result(s) for '{query}'."
+        if parts
+        else f"No results found for '{query}'."
+    )
+    return _result_json(ToolResult(ok=True, summary=summary, data={"parts": parts}))
 
 
 async def get_symbol_pins(symbol_id: str) -> str:
@@ -104,33 +144,50 @@ async def get_symbol_pins(symbol_id: str) -> str:
     try:
         pins = get_symbol_info(symbol_id).pins
     except (ValueError, SymbolNotFoundError, LibraryNotFoundError) as e:
-        return f"Error: {e}"
-
-    if not pins:
-        return f"No pins found for {symbol_id}"
-
-    # Calculate column widths for a pretty Markdown table
-    col1_w = max(len("Pin #"), max((len(str(p.number)) for p in pins), default=0))
-    col2_w = max(len("Name"), max((len(p.name) for p in pins), default=0))
-    col3_w = max(len("Electrical Type"), max((len(p.electrical_type) for p in pins), default=0))
-
-    header = f"| {'Pin #'.ljust(col1_w)} | {'Name'.ljust(col2_w)} | {'Electrical Type'.ljust(col3_w)} |"
-    sep = f"| {'-' * col1_w} | {'-' * col2_w} | {'-' * col3_w} |"
-
-    lines = [f"Pins for {symbol_id}:\n", header, sep]
-
-    for pin in pins:
-        lines.append(
-            f"| {str(pin.number).ljust(col1_w)} | {pin.name.ljust(col2_w)} | {pin.electrical_type.ljust(col3_w)} |"
+        return _result_json(
+            ToolResult(
+                ok=False,
+                summary=f"Could not load pins for {symbol_id}: {e}",
+                errors=[
+                    Diagnostic(
+                        severity="error",
+                        code="symbol_lookup_failed",
+                        message=str(e),
+                        stage="get_symbol_pins",
+                    )
+                ],
+                data={"pins": []},
+            )
         )
 
-    return "\n".join(lines)
+    pin_records = []
+    for pin in pins:
+        grid_offset = pin.grid_offset
+        pin_records.append(
+            {
+                "number": str(pin.number),
+                "name": pin.name,
+                "electrical_type": pin.electrical_type,
+                "direction": pin.direction,
+                "grid_offset": (
+                    {"x": grid_offset.x, "y": grid_offset.y}
+                    if grid_offset is not None
+                    else None
+                ),
+            }
+        )
+
+    return _result_json(
+        ToolResult(
+            ok=True,
+            summary=f"Found {len(pin_records)} pin(s) for {symbol_id}.",
+            data={"pins": pin_records},
+        )
+    )
 
 
 async def validate_circuit_json(file_path: str) -> str:
     """Validate a Circuit JSON file (source_* elements only)."""
-    from pathlib import Path
-
     from circuitweaver.validator import validate_circuit_file as _validate
 
     path = Path(file_path)
@@ -139,116 +196,163 @@ async def validate_circuit_json(file_path: str) -> str:
     try:
         resolved_path = path.resolve(strict=False)
     except (OSError, ValueError) as e:
-        return f"Error: Invalid path: {e}"
+        return _error_result("invalid_path", f"Invalid path: {e}", "validate", file_path)
 
     if not resolved_path.exists():
-        return f"Error: File not found: {file_path}"
+        return _error_result("file_not_found", f"File not found: {file_path}", "validate", file_path)
 
     if not resolved_path.is_file():
-        return f"Error: Not a file: {file_path}"
+        return _error_result("not_a_file", f"Not a file: {file_path}", "validate", file_path)
 
     result = _validate(resolved_path)
+    errors = [
+        Diagnostic(
+            severity="error",
+            code=error.rule,
+            message=error.message,
+            element_id=error.element_id,
+            location=error.location,
+            stage="validate",
+        )
+        for error in result.errors
+    ]
+    warnings = [
+        Diagnostic(
+            severity="warning",
+            code=warning.rule,
+            message=warning.message,
+            element_id=warning.element_id,
+            location=warning.location,
+            stage="validate",
+        )
+        for warning in result.warnings
+    ]
+    summary = (
+        f"{file_path} is valid."
+        if result.is_valid
+        else f"{file_path} has {len(result.errors)} validation error(s)."
+    )
+    return _result_json(
+        ToolResult(
+            ok=result.is_valid,
+            summary=summary,
+            errors=errors,
+            warnings=warnings,
+            data={"validation": result.to_dict()},
+        )
+    )
 
-    if result.is_valid:
-        msg = f"SUCCESS: {file_path} is valid"
-        if result.warnings:
-            msg += f"\n\nWarnings ({len(result.warnings)}):"
-            for w in result.warnings:
-                msg += f"\n- {w}"
-        return msg
-    else:
-        msg = f"FAILED: {file_path} has {len(result.errors)} error(s)"
-        for e in result.errors:
-            msg += f"\n- {e}"
-        if result.warnings:
-            msg += f"\n\nWarnings ({len(result.warnings)}):"
-            for w in result.warnings:
-                msg += f"\n- {w}"
-        return msg
 
-
-async def create_schematic(file_path: str, debug: bool = False) -> str:
+async def create_schematic(
+    file_path: str,
+    output_dir: str | None = None,
+    project_name: str | None = None,
+    write_schematic_json: bool = True,
+    write_kicad: bool = True,
+    write_debug_layout: bool = False,
+    debug: bool = False,
+) -> str:
     """Run auto-layout on a Circuit JSON file to generate schematic elements."""
-    from pathlib import Path
-
     from circuitweaver.compiler.engine import CompileEngine
     from circuitweaver.io.json import read_circuit, write_schematic
 
     path = Path(file_path)
     if not path.exists():
-        return f"Error: File not found: {file_path}"
+        return _error_result("file_not_found", f"File not found: {file_path}", "create_schematic", file_path)
+    if not path.is_file():
+        return _error_result("not_a_file", f"Not a file: {file_path}", "create_schematic", file_path)
 
     try:
         elements = read_circuit(path)
         engine = CompileEngine()
+        resolved_output_dir = Path(output_dir) if output_dir else path.parent
+        resolved_output_dir.mkdir(parents=True, exist_ok=True)
+        name = project_name or path.stem
+        should_write_debug = write_debug_layout or debug
 
         # Run layout with optional debug info
-        debug_dir = path.parent if debug else None
-        debug_basename = path.stem if debug else None
+        debug_dir = resolved_output_dir if should_write_debug else None
+        debug_basename = name if should_write_debug else None
 
         updated_elements = engine.layout(
             elements, debug_dir=debug_dir, debug_basename=debug_basename
         )
+        outputs: list[OutputArtifact] = []
 
-        # Write only the schematic elements to a separate file
-        schematic_path = path.parent / f"{path.stem}_schematic.json"
-        write_schematic(schematic_path, updated_elements)
+        if write_schematic_json:
+            schematic_path = resolved_output_dir / f"{name}_schematic.json"
+            write_schematic(schematic_path, updated_elements)
+            outputs.append(
+                OutputArtifact(
+                    kind="schematic_json",
+                    path=schematic_path,
+                    name=schematic_path.name,
+                    metadata={"element_count": len(updated_elements)},
+                )
+            )
 
-        # Generate KiCad files in the same directory
-        engine.compile(updated_elements, path.parent, project_name=path.stem)
+        if write_kicad:
+            root_schematic = engine.compile(updated_elements, resolved_output_dir, project_name=name)
+            outputs.append(
+                OutputArtifact(
+                    kind="kicad_schematic",
+                    path=root_schematic,
+                    name=root_schematic.name,
+                )
+            )
+            project_file = resolved_output_dir / f"{name}.kicad_pro"
+            if project_file.exists():
+                outputs.append(
+                    OutputArtifact(kind="kicad_project", path=project_file, name=project_file.name)
+                )
 
-        msg = f"SUCCESS: Generated schematic files in {path.parent}:\n"
-        msg += f"- {schematic_path.name} (Circuit JSON visual elements)\n"
-        msg += f"- {path.stem}.kicad_sch (KiCad schematic)\n"
-        msg += f"- {path.stem}.kicad_pro (KiCad project)\n"
+        if should_write_debug:
+            for suffix in ("layout_in", "layout_out"):
+                debug_path = resolved_output_dir / f"{name}_{suffix}.json"
+                if debug_path.exists():
+                    outputs.append(
+                        OutputArtifact(kind=f"debug_{suffix}", path=debug_path, name=debug_path.name)
+                    )
 
-        if debug:
-            msg += f"- {path.stem}_layout_in.json (ELK input graph)\n"
-            msg += f"- {path.stem}_layout_out.json (ELK output graph)\n"
-
-        return msg
+        return _result_json(
+            ToolResult(
+                ok=True,
+                summary=f"Generated {len(outputs)} output file(s) in {resolved_output_dir}.",
+                outputs=outputs,
+                data={
+                    "artifacts": [artifact.to_dict() for artifact in outputs],
+                    "output_dir": str(resolved_output_dir),
+                    "project_name": name,
+                },
+            )
+        )
     except Exception as e:
-        return f"Error creating schematic: {e}"
+        return _error_result("create_schematic_failed", str(e), "create_schematic", file_path)
 
 
-async def run_erc(file_path: str) -> str:
+async def run_erc(
+    file_path: str,
+    output_dir: str | None = None,
+    project_name: str | None = None,
+    keep_generated: bool = False,
+) -> str:
     """Run Electrical Rules Check (ERC) on a Circuit JSON file."""
-    import tempfile
-    from pathlib import Path
-
-    from circuitweaver.compiler.engine import CompileEngine
-    from circuitweaver.io.json import read_circuit
-
-    path = Path(file_path)
-    if not path.exists():
-        return f"Error: File not found: {file_path}"
-
     try:
-        elements = read_circuit(path)
-        engine = CompileEngine()
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_path = Path(tmpdir)
-            # Compile to temporary KiCad files
-            root_sch = engine.compile(elements, tmp_path, project_name="erc_temp")
-            # Run ERC on the root schematic
-            result = engine.run_erc(root_sch)
-
-        if result["is_valid"]:
-            msg = f"SUCCESS: ERC passed for {file_path}"
-        else:
-            msg = f"FAILED: ERC found {len(result['errors'])} error(s) in {file_path}"
-            for e in result["errors"]:
-                msg += f"\n- {e}"
-
-        if result.get("warnings"):
-            msg += f"\n\nWarnings ({len(result['warnings'])}):"
-            for w in result["warnings"]:
-                msg += f"\n- {w}"
-
-        return msg
+        result = run_erc_for_path(
+            Path(file_path),
+            output_dir=Path(output_dir) if output_dir else None,
+            project_name=project_name,
+            keep_generated=keep_generated,
+        )
+        if "erc" not in result.data:
+            result.data["erc"] = {
+                "is_valid": result.ok,
+                "errors": [error.message for error in result.errors],
+                "warnings": [warning.message for warning in result.warnings],
+            }
+        return _result_json(result)
     except Exception as e:
-        return f"Error running ERC: {e}"
+        return _error_result("erc_failed", str(e), "erc", file_path)
 
 
 # =============================================================================
@@ -263,12 +367,15 @@ TOOL_REGISTRY: dict[str, ToolHandler] = {
             ToolParameter(
                 name="query",
                 type="string",
-                description="Search query (e.g., 'STM32G4', 'resistor 0603')",
+                description=(
+                    "case-insensitive search query matched against library IDs, names, "
+                    "descriptions, and keywords (e.g., 'STM32G4', 'resistor 0603')."
+                ),
             ),
             ToolParameter(
                 name="limit",
                 type="integer",
-                description="Maximum number of results",
+                description="positive maximum number of results to return.",
                 required=False,
                 default=10,
             ),
@@ -294,7 +401,7 @@ TOOL_REGISTRY: dict[str, ToolHandler] = {
             ToolParameter(
                 name="file_path",
                 type="string",
-                description="Path to the Circuit JSON file",
+                description="Path to the input Circuit JSON file.",
             ),
         ],
         handler=validate_circuit_json,
@@ -306,12 +413,50 @@ TOOL_REGISTRY: dict[str, ToolHandler] = {
             ToolParameter(
                 name="file_path",
                 type="string",
-                description="Path to the Circuit JSON file",
+                description="Path to the input Circuit JSON file.",
+            ),
+            ToolParameter(
+                name="output_dir",
+                type="string",
+                description=(
+                    "Optional output directory. Defaults to the input file directory when omitted."
+                ),
+                required=False,
+            ),
+            ToolParameter(
+                name="project_name",
+                type="string",
+                description="Optional KiCad project/output basename. Defaults to the input file stem.",
+                required=False,
+            ),
+            ToolParameter(
+                name="write_schematic_json",
+                type="boolean",
+                description="Write the generated Circuit JSON schematic file.",
+                required=False,
+                default=True,
+            ),
+            ToolParameter(
+                name="write_kicad",
+                type="boolean",
+                description="Write KiCad .kicad_sch and .kicad_pro files.",
+                required=False,
+                default=True,
+            ),
+            ToolParameter(
+                name="write_debug_layout",
+                type="boolean",
+                description="Write intermediate ELK layout input/output debug files.",
+                required=False,
+                default=False,
             ),
             ToolParameter(
                 name="debug",
                 type="boolean",
-                description="Optional: If true, generates intermediate layout data files (e.g. ELK inputs/outputs) for debugging.",
+                description=(
+                    "Deprecated alias for write_debug_layout. If true, writes intermediate "
+                    "ELK layout data files."
+                ),
                 required=False,
                 default=False,
             ),
@@ -325,7 +470,26 @@ TOOL_REGISTRY: dict[str, ToolHandler] = {
             ToolParameter(
                 name="file_path",
                 type="string",
-                description="Path to the Circuit JSON file",
+                description="Path to a Circuit JSON file or existing .kicad_sch schematic.",
+            ),
+            ToolParameter(
+                name="output_dir",
+                type="string",
+                description="Optional output directory for generated files when file_path is Circuit JSON.",
+                required=False,
+            ),
+            ToolParameter(
+                name="project_name",
+                type="string",
+                description="Optional KiCad project name when compiling Circuit JSON before ERC.",
+                required=False,
+            ),
+            ToolParameter(
+                name="keep_generated",
+                type="boolean",
+                description="Keep generated ERC input artifacts when possible.",
+                required=False,
+                default=False,
             ),
         ],
         handler=run_erc,

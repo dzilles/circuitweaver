@@ -28,8 +28,9 @@ async def test_validate_tool_success(tmp_path: Path):
     file_path.write_text(json.dumps(circuit))
 
     result = await validate_circuit_json(str(file_path))
-    assert "SUCCESS" in result
-    assert "is valid" in result
+    payload = json.loads(result)
+    assert payload["ok"] is True
+    assert payload["validation"]["is_valid"] is True
 
 @pytest.mark.asyncio
 async def test_validate_tool_failure(tmp_path: Path):
@@ -41,8 +42,9 @@ async def test_validate_tool_failure(tmp_path: Path):
     file_path.write_text(json.dumps(circuit))
 
     result = await validate_circuit_json(str(file_path))
-    assert "FAILED" in result
-    assert "non-existent source_component" in result
+    payload = json.loads(result)
+    assert payload["ok"] is False
+    assert "non-existent source_component" in payload["errors"][0]["message"]
 
 @pytest.mark.asyncio
 async def test_search_parts_tool():
@@ -50,9 +52,10 @@ async def test_search_parts_tool():
     # This might depend on KiCad libraries being present on the system.
     # If not present, it should at least return "No results found" rather than crashing.
     result = await search_kicad_parts("resistor")
-    assert isinstance(result, str)
-    # Even if no libraries are found, it should be a graceful message
-    assert "Found" in result or "No results found" in result
+    payload = json.loads(result)
+    assert payload["ok"] is True
+    assert "summary" in payload
+    assert "parts" in payload
 
 
 def test_mcp_resource_helpers_reflect_current_tools():
