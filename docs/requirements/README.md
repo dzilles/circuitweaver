@@ -21,6 +21,7 @@ codebase.
 - [io-and-validation.md](io-and-validation.md) - JSON I/O, S-expression I/O, validation flow, and active validation rules.
 - [layout-and-compilation.md](layout-and-compilation.md) - source-to-layout, ELK routing, schematic generation, and KiCad file writing.
 - [layout-quality.md](layout-quality.md) - planned schematic readability, no-overlap, left-to-right flow, and layout-quality validation.
+- [layout-bounds.md](layout-bounds.md) - planned page bounds, usable drawing area, overflow policy, and out-of-bounds validation.
 - [kicad-library-and-erc.md](kicad-library-and-erc.md) - KiCad path discovery, part search, symbol pinout extraction, and ERC parsing.
 - [cli-and-mcp.md](cli-and-mcp.md) - command-line interface, MCP tools, MCP resources, MCP prompts, and HTTP transport behavior.
 - [implementation-notes-and-gaps.md](implementation-notes-and-gaps.md) - current constraints, inactive code, and behavior that should not be assumed.
@@ -36,6 +37,7 @@ Requirement IDs use a short area prefix:
 - `VAL` - validation
 - `LAY` - layout
 - `LQ` - target layout quality and schematic readability
+- `LB` - target page bounds and overflow handling
 - `CMP` - compilation
 - `KICAD` - KiCad libraries and symbols
 - `ERC` - electrical rules check

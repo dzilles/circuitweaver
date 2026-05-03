@@ -6,6 +6,7 @@ Transforms Layout types (ELK graph with positions) into Schematic types
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from circuitweaver.transform.source_to_layout import LayoutRegistry, get_effective_symbol_id
@@ -29,6 +30,14 @@ from circuitweaver.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _Bounds:
+    x1: float
+    y1: float
+    x2: float
+    y2: float
 
 
 # =============================================================================
@@ -324,6 +333,18 @@ class LayoutToSchematicTransform:
                                 label.anchor_side = "left" if dx > 0 else "right"
                             else:
                                 label.anchor_side = "top" if dy > 0 else "bottom"
+                    else:
+                        source_point = self._find_port_position(node, raw_x, raw_y, edge.sources[0])
+                        if source_point is not None:
+                            label.center = Point(x=snap(source_point.x + 10), y=snap(source_point.y))
+                            label.anchor_side = "left"
+                        else:
+                            label_node = node.find_node(f"label_node_{label_id}")
+                            if label_node is not None:
+                                label.center = Point(
+                                    x=snap(raw_x + label_node.x),
+                                    y=snap(raw_y + label_node.y),
+                                )
 
                     # Only append if not already in final_elements
                     if not any(get_element_id(e) == get_element_id(label) for e in final_elements):
@@ -353,12 +374,15 @@ class LayoutToSchematicTransform:
                 trace_edges = []
                 for i in range(len(points) - 1):
                     if points[i].x != points[i + 1].x or points[i].y != points[i + 1].y:
-                        trace_edges.append(SchematicTraceEdge.model_validate({
-                            "from": points[i],
-                            "to": points[i + 1],
-                        }))
+                        trace_edges.extend(self._orthogonal_edges(points[i], points[i + 1]))
 
                 if trace_edges:
+                    trace_edges = self._avoid_component_bounds(
+                        trace_edges,
+                        sheet_id,
+                        elements,
+                        final_elements,
+                    )
                     final_elements.append(SchematicTrace(
                         schematic_trace_id=f"sch_{eid}_{id(section)}",
                         source_trace_id=source_trace_id,
@@ -372,3 +396,111 @@ class LayoutToSchematicTransform:
                 child, raw_x, raw_y,
                 sheet_id, registry, elements, final_elements, snap,
             )
+
+    def _find_port_position(
+        self,
+        node: LayoutNode,
+        parent_x: float,
+        parent_y: float,
+        port_id: str,
+    ) -> Point | None:
+        for port in node.ports:
+            if port.id == port_id:
+                return Point(x=parent_x + port.x, y=parent_y + port.y)
+        for child in node.children:
+            found = self._find_port_position(child, parent_x + child.x, parent_y + child.y, port_id)
+            if found is not None:
+                return found
+        return None
+
+    @staticmethod
+    def _orthogonal_edges(start: Point, end: Point) -> list[SchematicTraceEdge]:
+        if start.x == end.x or start.y == end.y:
+            return [SchematicTraceEdge.model_validate({"from": start, "to": end})]
+
+        elbow = Point(x=end.x, y=start.y)
+        return [
+            SchematicTraceEdge.model_validate({"from": start, "to": elbow}),
+            SchematicTraceEdge.model_validate({"from": elbow, "to": end}),
+        ]
+
+    def _avoid_component_bounds(
+        self,
+        trace_edges: list[SchematicTraceEdge],
+        sheet_id: str,
+        source_elements: list[CircuitElement],
+        final_elements: list[CircuitElement],
+    ) -> list[SchematicTraceEdge]:
+        component_bounds = self._component_bounds_by_sheet(source_elements, final_elements, sheet_id)
+        if not component_bounds:
+            return trace_edges
+
+        routed: list[SchematicTraceEdge] = []
+        for edge in trace_edges:
+            replacement = [edge]
+            for bounds in component_bounds:
+                next_replacement: list[SchematicTraceEdge] = []
+                for candidate in replacement:
+                    next_replacement.extend(self._detour_around_bounds(candidate, bounds))
+                replacement = next_replacement
+            routed.extend(replacement)
+        return routed
+
+    def _component_bounds_by_sheet(
+        self,
+        source_elements: list[CircuitElement],
+        final_elements: list[CircuitElement],
+        sheet_id: str,
+    ) -> list[_Bounds]:
+        sources = {
+            e.source_component_id: e for e in source_elements if isinstance(e, SourceComponent)
+        }
+        bounds: list[_Bounds] = []
+        for comp in final_elements:
+            if not isinstance(comp, SchematicComponent) or comp.sheet_id != sheet_id:
+                continue
+            source = sources.get(comp.source_component_id)
+            symbol = None
+            if source:
+                symbol_id = get_effective_symbol_id(source)
+                symbol = self.symbol_map.get(symbol_id) if symbol_id else None
+            width = getattr(symbol, "width", 40)
+            height = getattr(symbol, "height", 40)
+            bounds.append(
+                _Bounds(
+                    comp.center.x - width / 2,
+                    comp.center.y - height / 2,
+                    comp.center.x + width / 2,
+                    comp.center.y + height / 2,
+                )
+            )
+        return bounds
+
+    @staticmethod
+    def _detour_around_bounds(edge: SchematicTraceEdge, bounds: _Bounds) -> list[SchematicTraceEdge]:
+        start = edge.from_
+        end = edge.to
+        margin = 20
+        if start.y == end.y and bounds.y1 < start.y < bounds.y2:
+            x1, x2 = sorted((start.x, end.x))
+            if x1 < bounds.x2 and x2 > bounds.x1:
+                detour_y = bounds.y1 - margin
+                p1 = Point(x=start.x, y=detour_y)
+                p2 = Point(x=end.x, y=detour_y)
+                return [
+                    SchematicTraceEdge.model_validate({"from": start, "to": p1}),
+                    SchematicTraceEdge.model_validate({"from": p1, "to": p2}),
+                    SchematicTraceEdge.model_validate({"from": p2, "to": end}),
+                ]
+        if start.x == end.x and bounds.x1 < start.x < bounds.x2:
+            y1, y2 = sorted((start.y, end.y))
+            if y1 < bounds.y2 and y2 > bounds.y1:
+                detour_x = bounds.x1 - margin
+                p1 = Point(x=detour_x, y=start.y)
+                p2 = Point(x=detour_x, y=end.y)
+                return [
+                    SchematicTraceEdge.model_validate({"from": start, "to": p1}),
+                    SchematicTraceEdge.model_validate({"from": p1, "to": p2}),
+                    SchematicTraceEdge.model_validate({"from": p2, "to": end}),
+                ]
+        return [edge]

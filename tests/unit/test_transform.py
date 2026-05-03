@@ -3,42 +3,39 @@
 import pytest
 
 from circuitweaver.transform import (
-    # Source → Layout
-    SourceToLayoutTransform,
-    LayoutRegistry,
     FTYPE_SYMBOL_MAP,
-    get_effective_symbol_id,
+    LayoutRegistry,
     # Layout → Schematic
     LayoutToSchematicTransform,
-    snap_to_grid,
     # Schematic → S-expr
     SchematicToSExprTransform,
+    # Source → Layout
+    SourceToLayoutTransform,
+    get_effective_symbol_id,
+    snap_to_grid,
 )
 from circuitweaver.types import (
-    SourceComponent,
-    SourcePort,
-    SourceGroup,
-    SourceTrace,
-    LayoutNode,
-    LayoutPort,
     LayoutEdge,
     LayoutEdgeSection,
+    LayoutNode,
     LayoutPoint,
+    Point,
+    SchematicBox,
     SchematicComponent,
-    SchematicPort,
+    SchematicHierarchicalLabel,
+    SchematicHierarchicalPin,
+    SchematicNetLabel,
+    SchematicNoConnect,
+    SchematicText,
     SchematicTrace,
     SchematicTraceEdge,
-    SchematicBox,
-    SchematicNetLabel,
-    SchematicHierarchicalPin,
-    SchematicHierarchicalLabel,
-    SchematicText,
-    SchematicNoConnect,
-    Point,
-    SExpr,
+    SourceComponent,
+    SourceGroup,
+    SourcePort,
+)
+from circuitweaver.types import (
     s_expr_serialize as serialize,
 )
-
 
 # =============================================================================
 # FTYPE_SYMBOL_MAP Tests
@@ -387,14 +384,15 @@ class TestLayoutToSchematicTransform:
 
         traces = [e for e in result if isinstance(e, SchematicTrace)]
         assert len(traces) == 1
-        
+
         # The correct snapped absolute position is snap(105 + 5) = snap(110) = 110
         assert traces[0].edges[0].from_.x == 110.0
         assert traces[0].edges[0].from_.y == 110.0
-        
-        # The correct snapped absolute end position is snap(105 + 15) = snap(120) = 120
-        assert traces[0].edges[0].to.x == 120.0
-        assert traces[0].edges[0].to.y == 120.0
+
+        # The correct snapped absolute end position is snap(105 + 15) = snap(120) = 120.
+        # Diagonal ELK sections may be split into orthogonal schematic segments.
+        assert traces[0].edges[-1].to.x == 120.0
+        assert traces[0].edges[-1].to.y == 120.0
 
     def test_edge_with_bendpoints(self):
         """Test edge with bendpoints creates multi-segment trace."""
@@ -785,7 +783,7 @@ class TestTransformHierarchy:
         # Check for label edges inside boxes
         assert any(e.id.startswith("e_label_") for e in g1_node.edges)
         assert any(e.id.startswith("e_label_") for e in g2_node.edges)
-        
+
         # Add mock routed sections to edges since we aren't running the real ELK router here
         for e in g1_node.edges:
             if e.id.startswith("e_label_"):
@@ -805,11 +803,11 @@ class TestTransformHierarchy:
         # 2. Layout → Schematic
         sch_transform = LayoutToSchematicTransform()
         schematic_elements = sch_transform.transform("root", layout, registry, elements)
-        
+
         # Verify SchematicNetLabel elements are in the final schematic output
         labels = [e for e in schematic_elements if isinstance(e, SchematicNetLabel)]
         assert len(labels) == 2
-        
+
         # Verify labels have been assigned non-zero coordinates
         for label in labels:
             assert label.center.x != 0.0 or label.center.y != 0.0
@@ -839,11 +837,11 @@ class TestTransformHierarchy:
         transform = SourceToLayoutTransform()
         group = SourceGroup(source_group_id="g1", is_subcircuit=False)
         layout, registry = transform.transform("root", [group])
-        
+
         # 2. Layout → Schematic
         sch_transform = LayoutToSchematicTransform()
         schematic_elements = sch_transform.transform("root", layout, registry, [group])
-        
+
         boxes = [e for e in schematic_elements if isinstance(e, SchematicBox)]
         assert len(boxes) == 1
         assert boxes[0].is_hierarchical_sheet is False

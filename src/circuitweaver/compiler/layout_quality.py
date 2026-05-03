@@ -13,7 +13,10 @@ from circuitweaver.types import (
     SchematicHierarchicalLabel,
     SchematicHierarchicalPin,
     SchematicNetLabel,
+    SchematicPort,
+    SchematicTrace,
     SourceComponent,
+    SourceGroup,
     get_element_id,
 )
 
@@ -126,9 +129,12 @@ class LayoutQualityChecker:
         ]
         boxes = [e for e in items if isinstance(e, SchematicBox)]
         hpins = [e for e in items if isinstance(e, SchematicHierarchicalPin)]
+        ports = [e for e in items if isinstance(e, SchematicPort)]
+        traces = [e for e in items if isinstance(e, SchematicTrace)]
         source_components = {
             e.source_component_id: e for e in items if isinstance(e, SourceComponent)
         }
+        source_groups = {e.source_group_id: e for e in items if isinstance(e, SourceGroup)}
 
         component_bounds = {
             c.schematic_component_id: self._component_bounds(c, source_components)
@@ -143,8 +149,15 @@ class LayoutQualityChecker:
         self._check_label_overlaps(report, labels, label_bounds, component_bounds, component_sheets)
         self._check_root_sheet_box_overlaps(report, boxes, box_bounds)
         self._check_hierarchical_pin_overlaps(report, hpins)
+        self._check_hierarchical_pin_boundaries(report, hpins, box_bounds)
+        self._check_sheet_box_pin_capacity(report, boxes, hpins, box_bounds)
+        self._check_label_reference_proximity(report, labels, ports, hpins)
+        self._check_trace_quality(report, traces, components, component_bounds)
         self._check_component_group_containment(
             report, components, component_bounds, boxes, box_bounds, source_components
+        )
+        self._check_child_sheet_ownership(
+            report, components, source_components, source_groups
         )
 
         return report
@@ -352,3 +365,177 @@ class LayoutQualityChecker:
                         bounds=(comp_bounds, parent_bounds),
                     )
                 )
+
+    def _check_child_sheet_ownership(
+        self,
+        report: LayoutQualityReport,
+        components: list[SchematicComponent],
+        sources: dict[str, SourceComponent],
+        groups: dict[str, SourceGroup],
+    ) -> None:
+        for comp in components:
+            source = sources.get(comp.source_component_id)
+            if not source:
+                continue
+            expected_sheet = None
+            if source.source_group_id:
+                group = groups.get(source.source_group_id)
+                if group and group.is_subcircuit:
+                    expected_sheet = group.subcircuit_id or group.source_group_id
+            if source.subcircuit_id:
+                expected_sheet = source.subcircuit_id
+            if expected_sheet and comp.sheet_id != expected_sheet:
+                report.add(
+                    LayoutQualityDiagnostic(
+                        rule="LQ-103",
+                        message="Component is not on its assigned child sheet.",
+                        sheet_id=comp.sheet_id,
+                        element_ids=(comp.schematic_component_id, expected_sheet),
+                    )
+                )
+
+    def _check_hierarchical_pin_boundaries(
+        self,
+        report: LayoutQualityReport,
+        hpins: list[SchematicHierarchicalPin],
+        box_bounds: dict[str, Bounds],
+    ) -> None:
+        for pin in hpins:
+            box = box_bounds.get(pin.schematic_box_id)
+            if box is None:
+                continue
+            on_vertical = pin.center.x in {box.x1, box.x2} and box.y1 <= pin.center.y <= box.y2
+            on_horizontal = pin.center.y in {box.y1, box.y2} and box.x1 <= pin.center.x <= box.x2
+            if not on_vertical and not on_horizontal:
+                report.add(
+                    LayoutQualityDiagnostic(
+                        rule="LQ-023",
+                        message="Hierarchical pin is not on its sheet box boundary.",
+                        sheet_id=pin.sheet_id,
+                        element_ids=(pin.schematic_hierarchical_pin_id, pin.schematic_box_id),
+                        bounds=(box,),
+                    )
+                )
+
+    def _check_sheet_box_pin_capacity(
+        self,
+        report: LayoutQualityReport,
+        boxes: list[SchematicBox],
+        hpins: list[SchematicHierarchicalPin],
+        box_bounds: dict[str, Bounds],
+    ) -> None:
+        pins_by_box: dict[str, list[SchematicHierarchicalPin]] = {}
+        for pin in hpins:
+            pins_by_box.setdefault(pin.schematic_box_id, []).append(pin)
+
+        for box in boxes:
+            pins = pins_by_box.get(box.schematic_box_id, [])
+            if not box.is_hierarchical_sheet or not pins:
+                continue
+            per_edge = (len(pins) + 1) // 2
+            required_height = max(60, (per_edge + 1) * 20)
+            field_clearance = 30
+            if box.height < required_height + field_clearance:
+                report.add(
+                    LayoutQualityDiagnostic(
+                        rule="LQ-024",
+                        message="Sheet box is too small for hierarchical pins and sheet fields.",
+                        sheet_id=box.sheet_id,
+                        element_ids=(box.schematic_box_id, *tuple(p.schematic_hierarchical_pin_id for p in pins)),
+                        bounds=(box_bounds[box.schematic_box_id],),
+                    )
+                )
+
+    def _check_label_reference_proximity(
+        self,
+        report: LayoutQualityReport,
+        labels: list[SchematicNetLabel | SchematicHierarchicalLabel],
+        ports: list[SchematicPort],
+        hpins: list[SchematicHierarchicalPin],
+    ) -> None:
+        ports_by_id = {port.source_port_id: port for port in ports}
+        hpins_by_id = {pin.schematic_hierarchical_pin_id: pin for pin in hpins}
+        max_distance = 40
+
+        for label in labels:
+            label_id = get_element_id(label)
+            if label.source_port_id and label.source_port_id in ports_by_id:
+                port = ports_by_id[label.source_port_id]
+                if label.sheet_id == port.sheet_id and self._distance(label.center, port.center) > max_distance:
+                    report.add(
+                        LayoutQualityDiagnostic(
+                            rule="LQ-060",
+                            message="Generated label is not near its referenced component port.",
+                            sheet_id=label.sheet_id,
+                            element_ids=(label_id, port.schematic_port_id),
+                        )
+                    )
+            if isinstance(label, SchematicNetLabel) and label.schematic_hierarchical_pin_id:
+                pin = hpins_by_id.get(label.schematic_hierarchical_pin_id)
+                if pin and label.sheet_id == pin.sheet_id and self._distance(label.center, pin.center) > max_distance:
+                    report.add(
+                        LayoutQualityDiagnostic(
+                            rule="LQ-063",
+                            message="Root-page label is not near its referenced hierarchical sheet pin.",
+                            sheet_id=label.sheet_id,
+                            element_ids=(label_id, pin.schematic_hierarchical_pin_id),
+                        )
+                    )
+
+    def _check_trace_quality(
+        self,
+        report: LayoutQualityReport,
+        traces: list[SchematicTrace],
+        components: list[SchematicComponent],
+        component_bounds: dict[str, Bounds],
+    ) -> None:
+        component_sheets = {comp.schematic_component_id: comp.sheet_id for comp in components}
+        for trace in traces:
+            for edge in trace.edges:
+                start = edge.from_
+                end = edge.to
+                if start.x != end.x and start.y != end.y:
+                    report.add(
+                        LayoutQualityDiagnostic(
+                            rule="LQ-080",
+                            message="Generated wire segment is not orthogonal.",
+                            sheet_id=trace.sheet_id,
+                            element_ids=(trace.schematic_trace_id,),
+                        )
+                    )
+                for comp_id, bounds in component_bounds.items():
+                    if component_sheets.get(comp_id) != trace.sheet_id:
+                        continue
+                    if self._segment_intersects_bounds(start, end, bounds):
+                        report.add(
+                            LayoutQualityDiagnostic(
+                                rule="LQ-081",
+                                message="Generated wire segment routes through a component bounding box.",
+                                sheet_id=trace.sheet_id,
+                                element_ids=(trace.schematic_trace_id, comp_id),
+                                bounds=(bounds,),
+                            )
+                        )
+
+    @staticmethod
+    def _distance(a, b) -> float:
+        return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2) ** 0.5
+
+    @staticmethod
+    def _segment_intersects_bounds(start, end, bounds: Bounds) -> bool:
+        if start.x == end.x:
+            x = start.x
+            y1, y2 = sorted((start.y, end.y))
+            return bounds.x1 < x < bounds.x2 and y1 < bounds.y2 and y2 > bounds.y1
+        if start.y == end.y:
+            y = start.y
+            x1, x2 = sorted((start.x, end.x))
+            return bounds.y1 < y < bounds.y2 and x1 < bounds.x2 and x2 > bounds.x1
+
+        segment_bounds = Bounds(
+            min(start.x, end.x),
+            min(start.y, end.y),
+            max(start.x, end.x),
+            max(start.y, end.y),
+        )
+        return segment_bounds.intersects(bounds)
