@@ -31,7 +31,7 @@ class TraceConnectionsRule(ValidationRule):
     def validate(
         self,
         elements: list[CircuitElement],
-        context: dict[str, Any],
+        _context: dict[str, Any],
     ) -> ValidationResult:
         result = ValidationResult()
 

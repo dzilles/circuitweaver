@@ -8,24 +8,17 @@ import pytest
 
 from circuitweaver.transform import (
     SourceToLayoutTransform,
-    LayoutRegistry,
-    get_effective_symbol_id,
 )
 from circuitweaver.types import (
-    SourceComponent,
-    SourcePort,
-    SourceNet,
-    SourceTrace,
-    SourceGroup,
-    LayoutNode,
-    LayoutPort,
-    LayoutEdge,
-    SchematicNetLabel,
     SchematicHierarchicalPin,
-    SchematicHierarchicalLabel,
+    SchematicNetLabel,
     SchematicNoConnect,
+    SourceComponent,
+    SourceGroup,
+    SourceNet,
+    SourcePort,
+    SourceTrace,
 )
-
 
 # =============================================================================
 # Fixtures: Realistic Circuit Scenarios
@@ -497,7 +490,7 @@ class TestNetLabels:
         """Test that net labels without registered port are not added."""
         # Remove SourcePorts so they are NOT registered even by the new fallback
         filtered = [e for e in circuit_with_net_labels if not isinstance(e, SourcePort)]
-        
+
         transform = SourceToLayoutTransform()
         layout, registry = transform.transform("root", filtered)
 
@@ -680,7 +673,7 @@ class TestSymbolMapIntegration:
         # Side constraints should be empty to prevent ELK from overriding our exact coordinates
         assert "org.eclipse.elk.port.side" not in port_1.layoutOptions
         assert "org.eclipse.elk.port.side" not in port_2.layoutOptions
-        
+
         # Verify coordinates are correct relative to bounding box
         assert port_1.x == 0.0
         assert port_1.y == 15.0

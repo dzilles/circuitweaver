@@ -9,7 +9,7 @@ Handles reading and writing of:
 
 import json
 from pathlib import Path
-from typing import Any, List, Type
+from typing import Any
 
 from circuitweaver.types import (
     CircuitElement,
@@ -31,12 +31,11 @@ from circuitweaver.types import (
     SourceTrace,
 )
 
-
 # =============================================================================
 # Type Mappings
 # =============================================================================
 
-SOURCE_TYPE_MAP: dict[str, Type[CircuitElement]] = {
+SOURCE_TYPE_MAP: dict[str, type[CircuitElement]] = {
     "source_component": SourceComponent,
     "source_port": SourcePort,
     "source_net": SourceNet,
@@ -45,7 +44,7 @@ SOURCE_TYPE_MAP: dict[str, Type[CircuitElement]] = {
     "source_group": SourceGroup,
 }
 
-SCHEMATIC_TYPE_MAP: dict[str, Type[CircuitElement]] = {
+SCHEMATIC_TYPE_MAP: dict[str, type[CircuitElement]] = {
     "schematic_component": SchematicComponent,
     "schematic_port": SchematicPort,
     "schematic_trace": SchematicTrace,
@@ -57,7 +56,7 @@ SCHEMATIC_TYPE_MAP: dict[str, Type[CircuitElement]] = {
     "schematic_no_connect": SchematicNoConnect,
 }
 
-ELEMENT_TYPE_MAP: dict[str, Type[CircuitElement]] = {
+ELEMENT_TYPE_MAP: dict[str, type[CircuitElement]] = {
     **SOURCE_TYPE_MAP,
     **SCHEMATIC_TYPE_MAP,
 }
@@ -67,7 +66,7 @@ ELEMENT_TYPE_MAP: dict[str, Type[CircuitElement]] = {
 # Circuit I/O (Source + Schematic combined)
 # =============================================================================
 
-def read_circuit(file_path: Path) -> List[CircuitElement]:
+def read_circuit(file_path: Path) -> list[CircuitElement]:
     """Read a Circuit JSON file containing Source and/or Schematic elements.
 
     Args:
@@ -94,7 +93,7 @@ def read_circuit(file_path: Path) -> List[CircuitElement]:
 
 def write_circuit(
     file_path: Path,
-    elements: List[CircuitElement],
+    elements: list[CircuitElement],
     indent: int = 2,
 ) -> None:
     """Write circuit elements to a JSON file.
@@ -113,7 +112,7 @@ def write_circuit(
 # Source I/O
 # =============================================================================
 
-def read_source(file_path: Path) -> List[CircuitElement]:
+def read_source(file_path: Path) -> list[CircuitElement]:
     """Read a JSON file containing only Source elements.
 
     Args:
@@ -136,7 +135,7 @@ def read_source(file_path: Path) -> List[CircuitElement]:
 
 def write_source(
     file_path: Path,
-    elements: List[CircuitElement],
+    elements: list[CircuitElement],
     indent: int = 2,
 ) -> None:
     """Write Source elements to a JSON file.
@@ -156,7 +155,7 @@ def write_source(
 # Schematic I/O
 # =============================================================================
 
-def read_schematic(file_path: Path) -> List[CircuitElement]:
+def read_schematic(file_path: Path) -> list[CircuitElement]:
     """Read a JSON file containing only Schematic elements.
 
     Args:
@@ -179,7 +178,7 @@ def read_schematic(file_path: Path) -> List[CircuitElement]:
 
 def write_schematic(
     file_path: Path,
-    elements: List[CircuitElement],
+    elements: list[CircuitElement],
     indent: int = 2,
 ) -> None:
     """Write Schematic elements to a JSON file.
@@ -305,9 +304,9 @@ def describe_unknown_field(raw: dict[str, Any], field_name: str) -> str:
 
 
 def _parse_elements(
-    raw_elements: List[dict[str, Any]],
-    type_map: dict[str, Type[CircuitElement]],
-) -> List[CircuitElement]:
+    raw_elements: list[dict[str, Any]],
+    type_map: dict[str, type[CircuitElement]],
+) -> list[CircuitElement]:
     """Parse a list of raw dictionaries into typed elements.
 
     Args:
@@ -320,7 +319,7 @@ def _parse_elements(
     Raises:
         ValueError: If any element is invalid.
     """
-    elements: List[CircuitElement] = []
+    elements: list[CircuitElement] = []
 
     for i, raw in enumerate(raw_elements):
         if not isinstance(raw, dict):

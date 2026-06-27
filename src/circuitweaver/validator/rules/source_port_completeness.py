@@ -33,7 +33,7 @@ class SourcePortCompletenessRule(ValidationRule):
     def validate(
         self,
         elements: list[CircuitElement],
-        context: dict[str, Any],
+        _context: dict[str, Any],
     ) -> ValidationResult:
         result = ValidationResult()
 
@@ -42,7 +42,7 @@ class SourcePortCompletenessRule(ValidationRule):
         for element in elements:
             if isinstance(element, SourcePort):
                 component_ports[element.source_component_id].append(element)
-                
+
                 # ADD WARNING for do_not_connect
                 if element.do_not_connect:
                     result.add_warning(
@@ -50,7 +50,7 @@ class SourcePortCompletenessRule(ValidationRule):
                         f"source_port '{element.source_port_id}' (pin {element.pin_number}) "
                         f"on component '{element.source_component_id}' is marked 'do_not_connect'. "
                         f"Connection is postponed or uncertain.",
-                        element_id=element.source_port_id
+                        element_id=element.source_port_id,
                     )
 
         # Check each component
@@ -59,7 +59,7 @@ class SourcePortCompletenessRule(ValidationRule):
                 continue
 
             comp_id = element.source_component_id
-            
+
             # 1. Check if symbol_id is present
             if not element.symbol_id:
                 result.add_warning(
@@ -84,7 +84,7 @@ class SourcePortCompletenessRule(ValidationRule):
 
             # 3. Check for completeness
             defined_ports = component_ports[comp_id]
-            
+
             # Create sets for easy lookup of defined pin numbers and names
             defined_numbers = {str(p.pin_number) for p in defined_ports if p.pin_number is not None}
             defined_names = {p.name for p in defined_ports}
@@ -92,7 +92,7 @@ class SourcePortCompletenessRule(ValidationRule):
             for expected_pin in expected_pins:
                 pin_num = str(expected_pin.number)
                 pin_name = expected_pin.name
-                
+
                 # A pin is considered defined if either its number or its name matches
                 if pin_num not in defined_numbers and pin_name not in defined_names:
                     result.add_error(

@@ -59,7 +59,7 @@ class CircuitProject:
         sheets = {e.sheet_id for e in self.schematic_elements if hasattr(e, "sheet_id")}
         return sheets or {"root"}
 
-    def with_elements(self, elements: list[CircuitElement]) -> "CircuitProject":
+    def with_elements(self, elements: list[CircuitElement]) -> CircuitProject:
         return CircuitProject(
             elements=elements,
             name=self.name,

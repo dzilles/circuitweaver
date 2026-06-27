@@ -1,7 +1,8 @@
-import json
-import pytest
 from pathlib import Path
-from circuitweaver.compiler import CompileEngine, AutoRouter
+
+import pytest
+
+from circuitweaver.compiler import AutoRouter, CompileEngine
 from circuitweaver.types import SourceComponent
 
 
@@ -11,7 +12,8 @@ def test_autorouter_node_check():
     original_which = shutil.which
 
     def mock_which(cmd):
-        if cmd == "node": return None
+        if cmd == "node":
+            return None
         return original_which(cmd)
 
     shutil.which = mock_which
@@ -41,6 +43,6 @@ def test_autolayout_basic_ipc():
         schematic_comps = [e for e in results if e.type == "schematic_component"]
         assert len(schematic_comps) == 1
         assert schematic_comps[0].source_component_id == "R1"
-        assert hasattr(schematic_comps[0].center, 'x')
+        assert hasattr(schematic_comps[0].center, "x")
     except Exception as e:
         pytest.fail(f"Layout failed: {e}")

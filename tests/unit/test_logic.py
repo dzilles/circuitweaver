@@ -2,8 +2,9 @@
 
 import json
 from pathlib import Path
-import pytest
+
 from circuitweaver.validator import validate_circuit_file
+
 
 def test_source_group_validation(tmp_path: Path):
     """Test that source_group and its hierarchy are validated correctly."""
@@ -30,7 +31,7 @@ def test_source_group_validation(tmp_path: Path):
     ]
     file_path = tmp_path / "groups.json"
     file_path.write_text(json.dumps(circuit))
-    
+
     result = validate_circuit_file(file_path)
     assert result.is_valid
 
@@ -46,7 +47,7 @@ def test_source_group_invalid_parent(tmp_path: Path):
     ]
     file_path = tmp_path / "bad_group.json"
     file_path.write_text(json.dumps(circuit))
-    
+
     result = validate_circuit_file(file_path)
     assert not result.is_valid
     assert any("non-existent parent_source_group_id" in str(e) for e in result.errors)
@@ -69,7 +70,7 @@ def test_source_trace_new_format(tmp_path: Path):
     ]
     file_path = tmp_path / "trace_format.json"
     file_path.write_text(json.dumps(circuit))
-    
+
     result = validate_circuit_file(file_path)
     assert result.is_valid
 
@@ -91,7 +92,7 @@ def test_source_references_all_types(tmp_path: Path):
     ]
     file_path = tmp_path / "refs.json"
     file_path.write_text(json.dumps(circuit))
-    
+
     result = validate_circuit_file(file_path)
     assert result.is_valid
 
@@ -100,15 +101,15 @@ def test_missing_subcircuit_id_warning(tmp_path: Path):
     circuit = [
         {"type": "source_group", "source_group_id": "g1", "subcircuit_id": "real_sub"},
         {
-            "type": "source_component", 
-            "source_component_id": "c1", 
-            "name": "C1", 
+            "type": "source_component",
+            "source_component_id": "c1",
+            "name": "C1",
             "subcircuit_id": "fake_sub"
         }
     ]
     file_path = tmp_path / "subcircuit_warn.json"
     file_path.write_text(json.dumps(circuit))
-    
+
     result = validate_circuit_file(file_path)
     # It should be valid but have a warning
     assert result.is_valid
@@ -127,7 +128,7 @@ def test_trace_duplicate_ports(tmp_path: Path):
     ]
     file_path = tmp_path / "dup_trace_ports.json"
     file_path.write_text(json.dumps(circuit))
-    
+
     result = validate_circuit_file(file_path)
     assert not result.is_valid
     assert any("references port 'p1' multiple times" in str(e) for e in result.errors)

@@ -1,6 +1,5 @@
-import pytest
-from circuitweaver.library.pinout import get_symbol_info, SymbolAdapter
-from circuitweaver.types import GridOffset
+from circuitweaver.library.pinout import SymbolAdapter, get_symbol_info
+
 
 def test_get_symbol_info_resistor():
     """Test that a standard resistor symbol has non-zero dimensions from graphics."""
@@ -27,7 +26,7 @@ def test_adapter_extract_pins():
     sexp = sexpdata.loads(raw)
     adapter = SymbolAdapter()
     pins = adapter.extract_pins([sexp])
-    
+
     assert len(pins) == 1
     assert pins[0].number == "1"
     assert pins[0].name == "A"

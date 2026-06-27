@@ -1,17 +1,40 @@
 """Type definitions for CircuitWeaver."""
 
-from typing import Annotated, Union
+from typing import Annotated
 
 from pydantic import Field
 
-from circuitweaver.types.source import (
-    LogicElement,
-    SourceComponent,
-    SourceGroup,
-    SourceNet,
-    SourcePort,
-    SourceProjectConfig,
-    SourceTrace,
+from circuitweaver.types.errors import (
+    CircuitWeaverError,
+    CompilationError,
+    ERCError,
+    KiCadNotFoundError,
+    ValidationError,
+)
+from circuitweaver.types.layout import (
+    LayoutEdge,
+    LayoutEdgeSection,
+    LayoutLabel,
+    LayoutNode,
+    LayoutPoint,
+    LayoutPort,
+)
+from circuitweaver.types.s_expr import (
+    ParseError as SExprParseError,
+)
+from circuitweaver.types.s_expr import (
+    RawString,
+    SExpr,
+    SExprValue,
+)
+from circuitweaver.types.s_expr import (
+    format_value as s_expr_format_value,
+)
+from circuitweaver.types.s_expr import (
+    parse as s_expr_parse,
+)
+from circuitweaver.types.s_expr import (
+    serialize as s_expr_serialize,
 )
 from circuitweaver.types.schematic import (
     GridOffset,
@@ -30,54 +53,22 @@ from circuitweaver.types.schematic import (
     SchematicTraceEdge,
     Size,
 )
-from circuitweaver.types.layout import (
-    LayoutEdge,
-    LayoutEdgeSection,
-    LayoutLabel,
-    LayoutNode,
-    LayoutPoint,
-    LayoutPort,
+from circuitweaver.types.source import (
+    LogicElement,
+    SourceComponent,
+    SourceGroup,
+    SourceNet,
+    SourcePort,
+    SourceProjectConfig,
+    SourceTrace,
 )
-from circuitweaver.types.s_expr import (
-    ParseError as SExprParseError,
-    RawString,
-    SExpr,
-    SExprValue,
-    format_value as s_expr_format_value,
-    parse as s_expr_parse,
-    serialize as s_expr_serialize,
-)
-from circuitweaver.types.errors import (
-    CircuitWeaverError,
-    CompilationError,
-    ERCError,
-    KiCadNotFoundError,
-    ValidationError,
-)
-
 
 # =============================================================================
 # Union Type for All Elements
 # =============================================================================
 
 CircuitElement = Annotated[
-    Union[
-        SourceComponent,
-        SourcePort,
-        SourceNet,
-        SourceProjectConfig,
-        SourceTrace,
-        SourceGroup,
-        SchematicComponent,
-        SchematicPort,
-        SchematicTrace,
-        SchematicBox,
-        SchematicNetLabel,
-        SchematicHierarchicalPin,
-        SchematicHierarchicalLabel,
-        SchematicText,
-        SchematicNoConnect,
-    ],
+    SourceComponent | SourcePort | SourceNet | SourceProjectConfig | SourceTrace | SourceGroup | SchematicComponent | SchematicPort | SchematicTrace | SchematicBox | SchematicNetLabel | SchematicHierarchicalPin | SchematicHierarchicalLabel | SchematicText | SchematicNoConnect,
     Field(discriminator="type"),
 ]
 

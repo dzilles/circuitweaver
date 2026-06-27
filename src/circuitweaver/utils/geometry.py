@@ -30,12 +30,12 @@ def is_orthogonal(x1: int, y1: int, x2: int, y2: int) -> bool:
     return x1 == x2 or y1 == y2
 
 
-def is_horizontal(x1: int, y1: int, x2: int, y2: int) -> bool:
+def is_horizontal(_x1: int, y1: int, _x2: int, y2: int) -> bool:
     """Check if a line segment is horizontal."""
     return y1 == y2
 
 
-def is_vertical(x1: int, y1: int, x2: int, y2: int) -> bool:
+def is_vertical(x1: int, _y1: int, x2: int, _y2: int) -> bool:
     """Check if a line segment is vertical."""
     return x1 == x2
 
@@ -87,7 +87,7 @@ def make_orthogonal_path_around(
     start: Point,
     end: Point,
     avoid_points: list[Point],
-    margin: int = 2,
+    _margin: int = 2,
 ) -> list[Edge]:
     """Create an orthogonal path that avoids certain points.
 

@@ -5,7 +5,7 @@ These models are strictly frozen (immutable) to prevent accidental state
 mutations during validation and layout phases.
 """
 
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,37 +20,37 @@ class SourceComponent(BaseModel):
     name: str = Field(..., description="Reference designator (R1, C1, U1)")
 
     # KiCad Symbol Mapping
-    symbol_id: Optional[str] = Field(
+    symbol_id: str | None = Field(
         default=None,
         description="KiCad symbol ID (e.g., 'Device:R'). "
         "Required for validation and KiCad schematic generation.",
     )
 
     # Component subtype
-    ftype: Optional[str] = Field(
+    ftype: str | None = Field(
         default=None,
         description="Component subtype: simple_resistor, simple_capacitor, etc.",
     )
 
     # Value fields
-    resistance: Optional[float] = None
-    capacitance: Optional[float] = None
-    inductance: Optional[float] = None
-    frequency: Optional[float] = None
-    current_rating_amps: Optional[float] = None
-    color: Optional[str] = None
-    display_value: Optional[str] = None
+    resistance: float | None = None
+    capacitance: float | None = None
+    inductance: float | None = None
+    frequency: float | None = None
+    current_rating_amps: float | None = None
+    color: str | None = None
+    display_value: str | None = None
 
     # PCB/BOM fields
-    footprint: Optional[str] = None
-    manufacturer_part_number: Optional[str] = None
-    supplier_part_numbers: Optional[dict[str, list[str]]] = None
+    footprint: str | None = None
+    manufacturer_part_number: str | None = None
+    supplier_part_numbers: dict[str, list[str]] | None = None
 
     # Hierarchy
-    subcircuit_id: Optional[str] = Field(
+    subcircuit_id: str | None = Field(
         default=None, description="Subcircuit this component belongs to"
     )
-    source_group_id: Optional[str] = Field(
+    source_group_id: str | None = Field(
         default=None, description="Parent group reference"
     )
 
@@ -64,17 +64,17 @@ class SourcePort(BaseModel):
     source_port_id: str = Field(..., description="Unique identifier")
     source_component_id: str = Field(..., description="Parent component ID")
     name: str = Field(..., description="Pin name")
-    pin_number: Optional[int] = None
-    port_hints: Optional[list[str]] = None
+    pin_number: int | None = None
+    port_hints: list[str] | None = None
 
     # Attributes
-    is_power: Optional[bool] = None
-    is_ground: Optional[bool] = None
-    must_be_connected: Optional[bool] = None
-    do_not_connect: Optional[bool] = None
+    is_power: bool | None = None
+    is_ground: bool | None = None
+    must_be_connected: bool | None = None
+    do_not_connect: bool | None = None
 
     # Hierarchy
-    subcircuit_id: Optional[str] = None
+    subcircuit_id: str | None = None
 
 
 class SourceNet(BaseModel):
@@ -86,13 +86,13 @@ class SourceNet(BaseModel):
     source_net_id: str = Field(..., description="Unique identifier")
     name: str = Field(..., description="Net name")
 
-    is_power: Optional[bool] = None
-    is_ground: Optional[bool] = None
-    is_global: Optional[bool] = None
-    is_digital_signal: Optional[bool] = None
-    is_analog_signal: Optional[bool] = None
-    trace_width: Optional[float] = None
-    subcircuit_id: Optional[str] = None
+    is_power: bool | None = None
+    is_ground: bool | None = None
+    is_global: bool | None = None
+    is_digital_signal: bool | None = None
+    is_analog_signal: bool | None = None
+    trace_width: float | None = None
+    subcircuit_id: str | None = None
 
 
 class SourceProjectConfig(BaseModel):
@@ -117,9 +117,9 @@ class SourceTrace(BaseModel):
     connected_source_port_ids: list[str] = Field(..., description="Port IDs")
     connected_source_net_ids: list[str] = Field(default_factory=list)
 
-    max_length: Optional[float] = None
-    display_name: Optional[str] = None
-    subcircuit_id: Optional[str] = None
+    max_length: float | None = None
+    display_name: str | None = None
+    subcircuit_id: str | None = None
 
 
 class SourceGroup(BaseModel):
@@ -129,13 +129,13 @@ class SourceGroup(BaseModel):
 
     type: Literal["source_group"] = "source_group"
     source_group_id: str = Field(..., description="Unique identifier")
-    name: Optional[str] = None
+    name: str | None = None
 
     # Hierarchy
-    subcircuit_id: Optional[str] = None
-    parent_subcircuit_id: Optional[str] = None
-    parent_source_group_id: Optional[str] = None
-    is_subcircuit: Optional[bool] = Field(
+    subcircuit_id: str | None = None
+    parent_subcircuit_id: str | None = None
+    parent_source_group_id: str | None = None
+    is_subcircuit: bool | None = Field(
         default=None,
         description="True if this is a separate schematic page (subcircuit)",
     )
@@ -146,13 +146,6 @@ class SourceGroup(BaseModel):
 # =============================================================================
 
 LogicElement = Annotated[
-    Union[
-        SourceComponent,
-        SourcePort,
-        SourceNet,
-        SourceProjectConfig,
-        SourceTrace,
-        SourceGroup,
-    ],
+    SourceComponent | SourcePort | SourceNet | SourceProjectConfig | SourceTrace | SourceGroup,
     Field(discriminator="type"),
 ]

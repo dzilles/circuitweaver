@@ -4,17 +4,16 @@ import os
 import platform
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
 class LibraryPaths:
     """Paths to KiCad libraries."""
 
-    symbols: Optional[Path] = None
-    footprints: Optional[Path] = None
-    models_3d: Optional[Path] = None
-    templates: Optional[Path] = None
+    symbols: Path | None = None
+    footprints: Path | None = None
+    models_3d: Path | None = None
+    templates: Path | None = None
 
 
 def get_library_paths() -> LibraryPaths:
@@ -82,7 +81,7 @@ def _get_linux_paths() -> list[Path]:
     # Standard package manager locations
     for version in ["10.0", "9.0", "8.0", "7.0"]:
         candidates.append(Path(f"/usr/share/kicad/{version}"))
-        candidates.append(Path(f"/usr/share/kicad"))
+        candidates.append(Path("/usr/share/kicad"))
 
     # Flatpak
     candidates.append(Path.home() / ".var/app/org.kicad.KiCad/data/kicad")
@@ -116,7 +115,7 @@ def _get_windows_paths() -> list[Path]:
     candidates = []
 
     # Standard installation
-    program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
+    program_files = os.environ.get("PROGRAMFILES", "C:\\Program Files")
     for version in ["10.0", "9.0", "8.0", "7.0"]:
         candidates.append(Path(program_files) / f"KiCad\\{version}\\share\\kicad")
         candidates.append(Path(program_files) / f"KiCad\\share\\kicad\\{version}")
@@ -129,7 +128,7 @@ def _get_windows_paths() -> list[Path]:
     return candidates
 
 
-def find_kicad_cli() -> Optional[Path]:
+def find_kicad_cli() -> Path | None:
     """Find the kicad-cli executable.
 
     Returns:
@@ -157,7 +156,7 @@ def find_kicad_cli() -> Optional[Path]:
             Path("/opt/homebrew/bin/kicad-cli"),
         ]
     elif system == "Windows":
-        program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
+        program_files = os.environ.get("PROGRAMFILES", "C:\\Program Files")
         candidates = [
             Path(program_files) / "KiCad" / "10.0" / "bin" / "kicad-cli.exe",
             Path(program_files) / "KiCad" / "bin" / "kicad-cli.exe",

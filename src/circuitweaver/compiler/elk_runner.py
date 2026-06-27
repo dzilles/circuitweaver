@@ -3,7 +3,7 @@ import logging
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ class ElkRunner:
     Handles the execution of the ELK layout engine via a Node.js subprocess.
     """
 
-    def __init__(self, helper_path: Optional[Path] = None):
+    def __init__(self, helper_path: Path | None = None):
         """
         Initializes the ElkRunner and verifies the Node.js dependency.
 
@@ -36,7 +36,7 @@ class ElkRunner:
         if not self.helper_path.exists():
             raise RuntimeError(f"ELK layout helper not found at: {self.helper_path}")
 
-    def run(self, graph: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, graph: dict[str, Any]) -> dict[str, Any]:
         """
         Pipes the ELK graph JSON to the Node.js process and returns the parsed layout results.
 

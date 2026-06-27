@@ -2,17 +2,17 @@
 
 import pytest
 
-from circuitweaver.types.s_expr import SExpr, RawString, serialize
-from circuitweaver.transform.schematic_to_s_expr import SchematicToSExprTransform, GRID_TO_MM
+from circuitweaver.transform.schematic_to_s_expr import GRID_TO_MM, SchematicToSExprTransform
 from circuitweaver.types import (
     Point,
+    SchematicBox,
     SchematicComponent,
+    SchematicNetLabel,
     SchematicTrace,
     SchematicTraceEdge,
-    SchematicNetLabel,
-    SchematicBox,
     SourceComponent,
 )
+from circuitweaver.types.s_expr import RawString, SExpr, serialize
 
 
 class TestSExpr:
@@ -58,7 +58,7 @@ class TestSExpr:
     def test_sexp_quoting_special_chars(self):
         """Test that special characters trigger quoting."""
         sexp = SExpr("property", "Reference", "U1")
-        result = serialize(sexp)
+        assert serialize(sexp) == "(property Reference U1)"
         # "Reference" should be quoted because it contains no special chars
         # but let's test one that does
         sexp_special = SExpr("text", "hello world")
@@ -262,4 +262,4 @@ class TestGridToMmConstant:
         """Test that GRID_TO_MM has the correct value."""
         from decimal import Decimal
 
-        assert GRID_TO_MM == Decimal("0.127")
+        assert Decimal("0.127") == GRID_TO_MM

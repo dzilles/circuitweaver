@@ -1,8 +1,8 @@
 """KiCad library interface for CircuitWeaver."""
 
-from circuitweaver.library.search import PartInfo, search_parts
-from circuitweaver.library.pinout import Pin, SymbolInfo, get_symbol_info
 from circuitweaver.library.paths import LibraryPaths, get_library_paths
+from circuitweaver.library.pinout import Pin, SymbolInfo, get_symbol_info
+from circuitweaver.library.search import PartInfo, search_parts
 
 __all__ = [
     "search_parts",

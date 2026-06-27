@@ -5,9 +5,9 @@ the ELK Node.js layout engine. They serve as the intermediate representation
 between Source types (logical netlist) and Schematic types (visual output).
 """
 
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Optional
 
+from pydantic import BaseModel, Field
 
 # =============================================================================
 # Geometry Primitives
@@ -24,7 +24,7 @@ class LayoutEdgeSection(BaseModel):
     id: str
     startPoint: LayoutPoint
     endPoint: LayoutPoint
-    bendPoints: List[LayoutPoint] = Field(default_factory=list)
+    bendPoints: list[LayoutPoint] = Field(default_factory=list)
 
 
 # =============================================================================
@@ -39,7 +39,7 @@ class LayoutLabel(BaseModel):
     y: float = 0
     width: float = 0
     height: float = 0
-    layoutOptions: Dict[str, Any] = Field(default_factory=dict)
+    layoutOptions: dict[str, Any] = Field(default_factory=dict)
 
 
 class LayoutPort(BaseModel):
@@ -49,16 +49,16 @@ class LayoutPort(BaseModel):
     y: float = 0
     width: float = 0
     height: float = 0
-    layoutOptions: Dict[str, Any] = Field(default_factory=dict)
+    layoutOptions: dict[str, Any] = Field(default_factory=dict)
 
 
 class LayoutEdge(BaseModel):
     """A connection between two ports (represents a trace/wire)."""
     id: str
-    sources: List[str]
-    targets: List[str]
-    sections: List[LayoutEdgeSection] = Field(default_factory=list)
-    layoutOptions: Dict[str, Any] = Field(default_factory=dict)
+    sources: list[str]
+    targets: list[str]
+    sections: list[LayoutEdgeSection] = Field(default_factory=list)
+    layoutOptions: dict[str, Any] = Field(default_factory=dict)
 
 
 class LayoutNode(BaseModel):
@@ -68,11 +68,11 @@ class LayoutNode(BaseModel):
     y: float = 0
     width: float = 0
     height: float = 0
-    labels: List[LayoutLabel] = Field(default_factory=list)
-    ports: List[LayoutPort] = Field(default_factory=list)
-    children: List["LayoutNode"] = Field(default_factory=list)
-    edges: List[LayoutEdge] = Field(default_factory=list)
-    layoutOptions: Dict[str, Any] = Field(default_factory=dict)
+    labels: list[LayoutLabel] = Field(default_factory=list)
+    ports: list[LayoutPort] = Field(default_factory=list)
+    children: list["LayoutNode"] = Field(default_factory=list)
+    edges: list[LayoutEdge] = Field(default_factory=list)
+    layoutOptions: dict[str, Any] = Field(default_factory=dict)
 
     def find_node(self, node_id: str) -> Optional["LayoutNode"]:
         """Recursively find a child node by its ID."""

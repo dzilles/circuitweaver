@@ -6,7 +6,7 @@ This module provides types for building and parsing S-expression trees.
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, List, Union
+from typing import Any
 
 
 class RawString:
@@ -39,7 +39,7 @@ class SExpr:
     """
 
     name: str
-    args: List[Any] = field(default_factory=list)
+    args: list[Any] = field(default_factory=list)
 
     def __init__(self, name: str, *args: Any):
         self.name = name
@@ -65,7 +65,7 @@ class SExpr:
                 return arg
         return None
 
-    def find_all(self, name: str) -> List["SExpr"]:
+    def find_all(self, name: str) -> list["SExpr"]:
         """Find all child SExprs with the given name."""
         return [arg for arg in self.args if isinstance(arg, SExpr) and arg.name == name]
 
@@ -83,7 +83,7 @@ class SExpr:
 
 
 # Type alias for S-expression values
-SExprValue = Union[SExpr, RawString, str, int, float, Decimal, bool, None]
+SExprValue = SExpr | RawString | str | int | float | Decimal | bool | None
 
 
 def format_value(val: Any) -> str:
@@ -176,7 +176,7 @@ def parse(text: str) -> SExpr:
     return result
 
 
-def _tokenize(text: str) -> List[str]:
+def _tokenize(text: str) -> list[str]:
     """Tokenize S-expression text into a list of tokens."""
     tokens = []
     i = 0
@@ -225,7 +225,7 @@ def _tokenize(text: str) -> List[str]:
     return tokens
 
 
-def _parse_expr(tokens: List[str]) -> tuple[SExpr, List[str]]:
+def _parse_expr(tokens: list[str]) -> tuple[SExpr, list[str]]:
     """Parse tokens into an SExpr, returning (result, remaining_tokens)."""
     if not tokens:
         raise ParseError("Unexpected end of input")
@@ -259,7 +259,7 @@ def _parse_expr(tokens: List[str]) -> tuple[SExpr, List[str]]:
     return SExpr(name, *args), tokens
 
 
-def _parse_atom(token: str) -> Union[str, int, float, bool]:
+def _parse_atom(token: str) -> str | int | float | bool:
     """Parse a single atom token into a Python value."""
     # Quoted string
     if token.startswith('"') and token.endswith('"'):

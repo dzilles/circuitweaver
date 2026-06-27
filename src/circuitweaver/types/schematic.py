@@ -4,10 +4,9 @@ This module defines WHERE things appear visually (positions, traces, labels).
 The auto-layout engine generates these elements from the logical source layer.
 """
 
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
-
 
 # =============================================================================
 # Common Types
@@ -57,7 +56,7 @@ class SchematicComponent(SchematicElementBase):
     source_component_id: str = Field(..., description="Logical component reference")
     center: Point = Field(..., description="Center coordinate")
     rotation: float = Field(default=0, description="Rotation in degrees")
-    symbol_name: Optional[str] = None
+    symbol_name: str | None = None
 
 
 class SchematicPort(SchematicElementBase):
@@ -81,7 +80,7 @@ class SchematicTrace(SchematicElementBase):
 
     type: Literal["schematic_trace"] = "schematic_trace"
     schematic_trace_id: str = Field(..., description="Unique identifier")
-    source_trace_id: Optional[str] = None
+    source_trace_id: str | None = None
     edges: list[SchematicTraceEdge] = Field(..., description="Wire segments")
 
 
@@ -95,8 +94,8 @@ class SchematicBox(SchematicElementBase):
     width: float
     height: float
     is_hierarchical_sheet: bool = Field(default=False)
-    child_sheet_id: Optional[str] = None
-    name: Optional[str] = None
+    child_sheet_id: str | None = None
+    name: str | None = None
 
     # Offsets for Sheetname and Sheetfile properties relative to (x, y)
     name_offset: Point = Field(default_factory=lambda: Point(x=0, y=-10))
@@ -109,8 +108,8 @@ class SchematicNetLabel(SchematicElementBase):
     type: Literal["schematic_net_label"] = "schematic_net_label"
     schematic_net_label_id: str = Field(..., description="Unique identifier")
     source_net_id: str = Field(..., description="Logical net reference")
-    source_port_id: Optional[str] = Field(default=None, description="Port to snap to")
-    schematic_hierarchical_pin_id: Optional[str] = Field(
+    source_port_id: str | None = Field(default=None, description="Port to snap to")
+    schematic_hierarchical_pin_id: str | None = Field(
         default=None, description="H-Pin to snap to"
     )
     center: Point = Field(..., description="Coordinate")
@@ -136,7 +135,7 @@ class SchematicHierarchicalLabel(SchematicElementBase):
     type: Literal["schematic_hierarchical_label"] = "schematic_hierarchical_label"
     schematic_hierarchical_label_id: str = Field(..., description="Unique identifier")
     source_net_id: str = Field(..., description="Logical net reference")
-    source_port_id: Optional[str] = Field(default=None, description="Port to snap to")
+    source_port_id: str | None = Field(default=None, description="Port to snap to")
     center: Point = Field(..., description="Coordinate")
     text: str = Field(..., description="Label text")
     anchor_side: Literal["left", "right", "top", "bottom"] = "left"
@@ -157,8 +156,8 @@ class SchematicNoConnect(SchematicElementBase):
 
     type: Literal["schematic_no_connect"] = "schematic_no_connect"
     schematic_no_connect_id: str = Field(..., description="Unique identifier")
-    schematic_port_id: Optional[str] = None
-    position: Optional[Point] = None
+    schematic_port_id: str | None = None
+    position: Point | None = None
 
 
 # =============================================================================
@@ -166,16 +165,6 @@ class SchematicNoConnect(SchematicElementBase):
 # =============================================================================
 
 SchematicElement = Annotated[
-    Union[
-        SchematicComponent,
-        SchematicPort,
-        SchematicTrace,
-        SchematicBox,
-        SchematicNetLabel,
-        SchematicHierarchicalPin,
-        SchematicHierarchicalLabel,
-        SchematicText,
-        SchematicNoConnect,
-    ],
+    SchematicComponent | SchematicPort | SchematicTrace | SchematicBox | SchematicNetLabel | SchematicHierarchicalPin | SchematicHierarchicalLabel | SchematicText | SchematicNoConnect,
     Field(discriminator="type"),
 ]

@@ -109,15 +109,17 @@ class SourceReferencesRule(ValidationRule):
                     )
 
             # Check source_group hierarchy references
-            if isinstance(element, SourceGroup):
-                if element.parent_source_group_id:
-                    if element.parent_source_group_id not in source_groups:
-                        result.add_error(
-                            self.name,
-                            f"source_group '{element.source_group_id}' references "
-                            f"non-existent parent_source_group_id "
-                            f"'{element.parent_source_group_id}'",
-                            element_id=element.source_group_id,
-                        )
+            if (
+                isinstance(element, SourceGroup)
+                and element.parent_source_group_id
+                and element.parent_source_group_id not in source_groups
+            ):
+                result.add_error(
+                    self.name,
+                    f"source_group '{element.source_group_id}' references "
+                    f"non-existent parent_source_group_id "
+                    f"'{element.parent_source_group_id}'",
+                    element_id=element.source_group_id,
+                )
 
         return result

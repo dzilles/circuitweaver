@@ -1,8 +1,8 @@
 from circuitweaver.compiler.engine import CompileEngine
 from circuitweaver.compiler.global_nets import GlobalNetResolver
 from circuitweaver.types import (
-    SchematicNetLabel,
     SchematicHierarchicalPin,
+    SchematicNetLabel,
     SourceComponent,
     SourceGroup,
     SourceNet,

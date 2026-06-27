@@ -3,9 +3,7 @@
 import json
 from pathlib import Path
 
-import pytest
-
-from circuitweaver.validator import validate_circuit_file, ValidationResult
+from circuitweaver.validator import validate_circuit_file
 
 
 class TestValidateCircuitFile:

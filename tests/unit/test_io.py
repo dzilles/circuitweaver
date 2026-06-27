@@ -1,52 +1,49 @@
 """Tests for the io module (JSON and S-expression I/O)."""
 
 import json
+
 import pytest
-from pathlib import Path
+from pydantic import ValidationError
 
 from circuitweaver.io import (
-    # Circuit (combined)
-    read_circuit,
-    write_circuit,
-    # Source only
-    read_source,
-    write_source,
-    # Schematic only
-    read_schematic,
-    write_schematic,
-    # Layout
-    read_layout,
-    write_layout,
-    # S-expression
-    read_s_expr,
-    write_s_expr,
-    # Element parsing helpers
-    parse_element,
-    get_element_id_from_raw,
     # Type maps
     ELEMENT_TYPE_MAP,
-    SOURCE_TYPE_MAP,
     SCHEMATIC_TYPE_MAP,
+    SOURCE_TYPE_MAP,
+    get_element_id_from_raw,
+    # Element parsing helpers
+    parse_element,
+    # Circuit (combined)
+    read_circuit,
+    # Layout
+    read_layout,
+    # S-expression
+    read_s_expr,
+    # Schematic only
+    read_schematic,
+    # Source only
+    read_source,
+    write_circuit,
+    write_layout,
+    write_s_expr,
+    write_schematic,
+    write_source,
 )
 from circuitweaver.types import (
+    LayoutEdge,
+    LayoutLabel,
+    LayoutNode,
+    LayoutPort,
+    Point,
+    SchematicComponent,
+    SchematicNetLabel,
+    SchematicTrace,
+    SchematicTraceEdge,
+    SExpr,
     SourceComponent,
     SourcePort,
     SourceTrace,
-    SourceNet,
-    SourceGroup,
-    SchematicComponent,
-    SchematicTrace,
-    SchematicTraceEdge,
-    SchematicNetLabel,
-    SchematicBox,
-    LayoutNode,
-    LayoutPort,
-    LayoutEdge,
-    LayoutLabel,
-    Point,
-    SExpr,
 )
-
 
 # =============================================================================
 # Type Maps Tests
@@ -153,7 +150,7 @@ class TestParseElement:
             "type": "source_component",
             # missing required fields
         }
-        with pytest.raises(Exception):  # Pydantic ValidationError
+        with pytest.raises(ValidationError):
             parse_element(raw)
 
 
@@ -508,7 +505,7 @@ class TestLayoutIO:
         file_path = tmp_path / "bad_layout.json"
         file_path.write_text(json.dumps(data))
 
-        with pytest.raises(Exception):  # Pydantic ValidationError
+        with pytest.raises(ValidationError):
             read_layout(file_path)
 
     def test_layout_find_node(self, simple_layout):

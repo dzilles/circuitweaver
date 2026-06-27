@@ -21,7 +21,7 @@ class GlobalNetResolver:
     global_names: frozenset[str]
 
     @classmethod
-    def from_elements(cls, elements: list[CircuitElement]) -> "GlobalNetResolver":
+    def from_elements(cls, elements: list[CircuitElement]) -> GlobalNetResolver:
         config = next((e for e in elements if isinstance(e, SourceProjectConfig)), None)
         use_kicad_defaults = (
             config.use_kicad_power_symbols_as_global_nets if config else True

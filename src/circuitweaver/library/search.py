@@ -4,7 +4,6 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from circuitweaver.library.paths import get_library_paths
 
@@ -18,10 +17,10 @@ class PartInfo:
     library_id: str  # e.g., "Device:R"
     library_name: str  # e.g., "Device"
     symbol_name: str  # e.g., "R"
-    description: Optional[str] = None
-    keywords: Optional[str] = None
-    default_footprint: Optional[str] = None
-    datasheet: Optional[str] = None
+    description: str | None = None
+    keywords: str | None = None
+    default_footprint: str | None = None
+    datasheet: str | None = None
 
 
 # Built-in common parts for when KiCad is not installed
@@ -263,7 +262,6 @@ def _search_kicad_libraries(
         if len(results) >= limit:
             break
 
-        library_name = sym_file.stem
         try:
             parts = _parse_symbol_library(sym_file, query_words, limit - len(results))
             results.extend(parts)
@@ -277,7 +275,7 @@ def _parse_symbol_library(
     sym_file: Path, query_words: list[str], limit: int
 ) -> list[PartInfo]:
     """Parse a KiCad symbol library file and extract matching symbols.
-    
+
     This is optimized to avoid character-by-character S-expression parsing
     unless a match is found.
     """
@@ -289,13 +287,13 @@ def _parse_symbol_library(
     # Pattern to find symbols and their properties in a single pass if possible
     # We find all (symbol "Name" blocks
     symbol_pattern = re.compile(r'\(symbol\s+"([^"]+)"')
-    
+
     # We'll split the file by (symbol to quickly process chunks
     chunks = symbol_pattern.split(content)
     # chunks[0] is everything before the first (symbol
     # chunks[1] is name of first symbol
     # chunks[2] is content of first symbol (until next (symbol)
-    
+
     for i in range(1, len(chunks), 2):
         if len(results) >= limit:
             break
@@ -311,18 +309,18 @@ def _parse_symbol_library(
 
         # Fast check: does the ID/Name match?
         id_match = all(word in library_id.lower() or word in symbol_name.lower() for word in query_words)
-        
+
         # Extract properties only if we need to check them for a match OR if we have an ID match
         # We search within the chunk (which is everything between (symbol "NAME" and the next (symbol)
-        
+
         # Description
         desc_match = re.search(r'\(property\s+"Description"\s+"([^"]*)"', symbol_content)
         description = desc_match.group(1) if desc_match else None
-        
+
         # Keywords
         key_match = re.search(r'\(property\s+"Keywords"\s+"([^"]*)"', symbol_content)
         keywords = key_match.group(1) if key_match else None
-        
+
         # If no ID match, check if properties match
         if not id_match:
             searchable = " ".join(filter(None, [description, keywords])).lower()

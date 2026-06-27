@@ -1,12 +1,11 @@
 """Custom exception types for CircuitWeaver."""
 
-from typing import Optional
 
 
 class CircuitWeaverError(Exception):
     """Base exception for all CircuitWeaver errors."""
 
-    def __init__(self, message: str, details: Optional[dict] = None):
+    def __init__(self, message: str, details: dict | None = None):
         super().__init__(message)
         self.message = message
         self.details = details or {}
@@ -24,9 +23,9 @@ class ValidationError(CircuitWeaverError):
     def __init__(
         self,
         message: str,
-        rule: Optional[str] = None,
-        element_id: Optional[str] = None,
-        location: Optional[dict] = None,
+        rule: str | None = None,
+        element_id: str | None = None,
+        location: dict | None = None,
     ):
         details = {}
         if rule:
@@ -47,8 +46,8 @@ class CompilationError(CircuitWeaverError):
     def __init__(
         self,
         message: str,
-        phase: Optional[str] = None,
-        element_id: Optional[str] = None,
+        phase: str | None = None,
+        element_id: str | None = None,
     ):
         details = {}
         if phase:
@@ -67,7 +66,7 @@ class ERCError(CircuitWeaverError):
         self,
         message: str,
         severity: str = "error",
-        location: Optional[str] = None,
+        location: str | None = None,
     ):
         details = {"severity": severity}
         if location:

@@ -1,16 +1,17 @@
 """Compiler for Circuit JSON to KiCad schematic format."""
 
-from circuitweaver.compiler.engine import CompileEngine
 from circuitweaver.compiler.auto_router import AutoRouter
+from circuitweaver.compiler.engine import CompileEngine
 
 
 def compile_to_kicad(input_file, output_dir):
     """Simple wrapper for the CompileEngine class."""
     import json
     from pathlib import Path
+
     from circuitweaver.types import CircuitElement
 
-    with open(input_file, "r") as f:
+    with open(input_file) as f:
         data = json.load(f)
 
     # Handle list or dict with 'elements' key
