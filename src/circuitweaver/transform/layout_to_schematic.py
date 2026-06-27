@@ -11,7 +11,9 @@ from typing import Any
 
 from circuitweaver.transform.source_to_layout import LayoutRegistry, get_effective_symbol_id
 from circuitweaver.types import (
+    SOURCE_TRACE_ID_LAYOUT_OPTION,
     CircuitElement,
+    LayoutEdge,
     LayoutNode,
     Point,
     SchematicBox,
@@ -358,11 +360,7 @@ class LayoutToSchematicTransform:
 
             # Regular edges
             elif eid.startswith("e_"):
-                parts = eid.split("_")
-                if len(parts) >= 4 and parts[1] == "to" and parts[2] == "hpin":
-                    source_trace_id = parts[3]
-                else:
-                    source_trace_id = parts[1]
+                source_trace_id = self._source_trace_id_for_edge(edge)
 
             # Build traces from sections
             for section in edge.sections:
@@ -396,6 +394,18 @@ class LayoutToSchematicTransform:
                 child, raw_x, raw_y,
                 sheet_id, registry, elements, final_elements, snap,
             )
+
+    @staticmethod
+    def _source_trace_id_for_edge(edge: LayoutEdge) -> str | None:
+        source_trace_id = edge.layoutOptions.get(SOURCE_TRACE_ID_LAYOUT_OPTION)
+        if source_trace_id:
+            return str(source_trace_id)
+
+        if edge.id.startswith("e_to_hpin_"):
+            return edge.id.removeprefix("e_to_hpin_")
+        if edge.id.startswith("e_"):
+            return edge.id.removeprefix("e_")
+        return None
 
     def _find_port_position(
         self,

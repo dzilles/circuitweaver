@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 from circuitweaver.types import (
+    SOURCE_TRACE_ID_LAYOUT_OPTION,
     CircuitElement,
     LayoutEdge,
     LayoutNode,
@@ -596,6 +597,7 @@ class SourceToLayoutTransform:
                         id=f"e_{conn.trace_id}_{target_port_id}",
                         sources=[src_elk_id],
                         targets=[tgt_elk_id],
+                        layoutOptions={SOURCE_TRACE_ID_LAYOUT_OPTION: conn.trace_id},
                     )
                 )
 

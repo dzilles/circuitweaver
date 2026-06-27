@@ -73,6 +73,7 @@ Completed nested-branch bridge hardening:
 - Bridge connections reuse the typed `SheetConnection` plan and target generated hierarchical pin IDs registered as ELK ports.
 - `SourceToLayoutTransform` can create a hierarchical label from a generated sheet pin without adding a separate renderer concept.
 - A deterministic compile regression now verifies nested branch-to-branch nets in generated KiCad sheet files.
+- Generated wire edges now carry source trace IDs as layout metadata, so layout-to-schematic no longer has to recover them by splitting edge IDs.
 
 Completed typed-test cleanup:
 

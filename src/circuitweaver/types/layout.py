@@ -9,6 +9,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+SOURCE_TRACE_ID_LAYOUT_OPTION = "circuitweaver.sourceTraceId"
+
 # =============================================================================
 # Geometry Primitives
 # =============================================================================

@@ -13,6 +13,7 @@ from circuitweaver.types.errors import (
     ValidationError,
 )
 from circuitweaver.types.layout import (
+    SOURCE_TRACE_ID_LAYOUT_OPTION,
     LayoutEdge,
     LayoutEdgeSection,
     LayoutLabel,
@@ -139,6 +140,7 @@ __all__ = [
     "LayoutEdgeSection",
     "LayoutPoint",
     "LayoutLabel",
+    "SOURCE_TRACE_ID_LAYOUT_OPTION",
     # Schematic types
     "SchematicElementBase",
     "SchematicComponent",

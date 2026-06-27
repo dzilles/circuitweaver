@@ -15,6 +15,7 @@ from circuitweaver.transform import (
     snap_to_grid,
 )
 from circuitweaver.types import (
+    SOURCE_TRACE_ID_LAYOUT_OPTION,
     LayoutEdge,
     LayoutEdgeSection,
     LayoutNode,
@@ -349,6 +350,63 @@ class TestLayoutToSchematicTransform:
         assert len(traces) == 1
         assert traces[0].sheet_id == "root"
         assert len(traces[0].edges) >= 1
+
+    def test_generated_wire_trace_ids_preserve_underscores(self):
+        """Trace IDs are carried as metadata, not recovered by splitting edge IDs."""
+        source_elements = [
+            SourceComponent(source_component_id="U_SRC", name="SRC"),
+            SourcePort(
+                source_port_id="port_src_out",
+                source_component_id="U_SRC",
+                name="OUT",
+                pin_number=1,
+            ),
+            SourceComponent(source_component_id="U_LOAD", name="LOAD"),
+            SourcePort(
+                source_port_id="port_load_in",
+                source_component_id="U_LOAD",
+                name="IN",
+                pin_number=1,
+            ),
+        ]
+        connectivity = {
+            "root": [
+                SheetConnection(
+                    net_id="net_with_underscores",
+                    trace_ids=("trace_with_underscores",),
+                    sheet_id="root",
+                    endpoint_port_ids=("port_src_out", "port_load_in"),
+                    render_kind="wire",
+                    label_text="NET_with_underscores",
+                    hierarchical_label_text="HPIN_with_underscores",
+                )
+            ]
+        }
+
+        layout, registry = SourceToLayoutTransform().transform(
+            "root",
+            source_elements,
+            sheet_connectivity=connectivity,
+        )
+        edge = layout.edges[0]
+        edge.sections.append(
+            LayoutEdgeSection(
+                id="sec",
+                startPoint=LayoutPoint(x=0, y=0),
+                endPoint=LayoutPoint(x=100, y=0),
+            )
+        )
+
+        result = LayoutToSchematicTransform().transform(
+            "root",
+            layout,
+            registry,
+            source_elements,
+        )
+
+        assert edge.layoutOptions[SOURCE_TRACE_ID_LAYOUT_OPTION] == "trace_with_underscores"
+        trace = next(element for element in result if isinstance(element, SchematicTrace))
+        assert trace.source_trace_id == "trace_with_underscores"
 
     def test_edge_position_is_snapped_correctly(self):
         """Test that edge snapping uses absolute raw coordinates, not pre-snapped parent coordinates.
