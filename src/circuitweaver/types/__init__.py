@@ -4,6 +4,7 @@ from typing import Annotated
 
 from pydantic import Field
 
+from circuitweaver.types.connectivity import RenderKind, SheetConnection
 from circuitweaver.types.errors import (
     CircuitWeaverError,
     CompilationError,
@@ -128,6 +129,9 @@ __all__ = [
     "SourceTrace",
     "SourceGroup",
     "LogicElement",
+    # Connectivity render plan
+    "RenderKind",
+    "SheetConnection",
     # Layout types (ELK graph)
     "LayoutNode",
     "LayoutPort",

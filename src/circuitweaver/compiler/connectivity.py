@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from circuitweaver.compiler.global_nets import GlobalNetResolver
 from circuitweaver.types import (
@@ -22,8 +22,7 @@ from circuitweaver.types import (
     SourcePort,
     SourceTrace,
 )
-
-RenderKind = Literal["wire", "local_label", "global_label", "hierarchical_label"]
+from circuitweaver.types.connectivity import RenderKind, SheetConnection
 
 
 @dataclass(frozen=True)
@@ -47,37 +46,6 @@ class LogicalNet:
     endpoints: tuple[NetEndpoint, ...]
     is_global: bool
 
-
-@dataclass(frozen=True)
-class SheetConnection:
-    """How one logical net should be represented on one sheet."""
-
-    net_id: str
-    trace_ids: tuple[str, ...]
-    sheet_id: str
-    endpoint_port_ids: tuple[str, ...]
-    render_kind: RenderKind
-    label_text: str
-    hierarchical_label_text: str
-    hierarchical_pin_id: str | None = None
-    is_inter_group: bool = False
-    is_inter_sheet: bool = False
-
-    def to_legacy_dict(self) -> dict[str, Any]:
-        """Return the current dictionary shape consumed by layout code."""
-        return {
-            "trace_id": self.trace_ids[0] if self.trace_ids else self.net_id,
-            "trace_ids": list(self.trace_ids),
-            "net_id": self.net_id,
-            "ports": list(self.endpoint_port_ids),
-            "is_inter_group": self.is_inter_group,
-            "is_inter_sheet": self.is_inter_sheet,
-            "is_global_net": self.render_kind == "global_label",
-            "label_text": self.label_text,
-            "hier_label_text": self.hierarchical_label_text,
-            "hpin_id": self.hierarchical_pin_id,
-            "render_kind": self.render_kind,
-        }
 
 
 def build_logical_nets(
@@ -149,7 +117,7 @@ def build_logical_nets(
     return logical_nets
 
 
-def build_sheet_connectivity(
+def build_connection_plan(
     *,
     traces: list[SourceTrace],
     ports: list[SourcePort],
@@ -159,8 +127,8 @@ def build_sheet_connectivity(
     groups: list[SourceGroup],
     elements: list[CircuitElement],
     global_resolver: GlobalNetResolver,
-) -> tuple[list[CircuitElement], dict[str, list[dict[str, Any]]]]:
-    """Build generated hierarchy elements and per-sheet render decisions."""
+) -> tuple[list[CircuitElement], dict[str, list[SheetConnection]]]:
+    """Build generated hierarchy elements and typed per-sheet render decisions."""
     logical_nets = build_logical_nets(
         traces=traces,
         ports=ports,
@@ -171,7 +139,7 @@ def build_sheet_connectivity(
     )
 
     generated: list[CircuitElement] = []
-    sheet_connectivity: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    sheet_connectivity: dict[str, list[SheetConnection]] = defaultdict(list)
     sheet_to_group = _sheet_to_group_id(groups)
     sheet_to_parent = _sheet_to_parent_sheet(groups, element_to_sheet)
 
@@ -220,15 +188,42 @@ def build_sheet_connectivity(
                 render_kind=render_kind,
                 label_text=label_text,
                 hierarchical_label_text=hierarchical_text,
+                source_net_id=logical_net.source_net_id,
                 hierarchical_pin_id=hierarchical_pin_by_sheet.get(sheet_id),
                 is_inter_group=is_inter_group,
                 is_inter_sheet=is_inter_sheet,
             )
-            legacy = connection.to_legacy_dict()
-            legacy["is_named_net"] = logical_net.source_net_id is not None
-            sheet_connectivity[sheet_id].append(legacy)
+            sheet_connectivity[sheet_id].append(connection)
 
     return generated, sheet_connectivity
+
+
+def build_sheet_connectivity(
+    *,
+    traces: list[SourceTrace],
+    ports: list[SourcePort],
+    nets: list[SourceNet],
+    element_to_sheet: dict[str, str],
+    element_to_group: dict[str, str],
+    groups: list[SourceGroup],
+    elements: list[CircuitElement],
+    global_resolver: GlobalNetResolver,
+) -> tuple[list[CircuitElement], dict[str, list[dict[str, Any]]]]:
+    """Compatibility wrapper returning legacy sheet-connectivity dictionaries."""
+    generated, plan = build_connection_plan(
+        traces=traces,
+        ports=ports,
+        nets=nets,
+        element_to_sheet=element_to_sheet,
+        element_to_group=element_to_group,
+        groups=groups,
+        elements=elements,
+        global_resolver=global_resolver,
+    )
+    return generated, {
+        sheet_id: [connection.to_legacy_dict() for connection in connections]
+        for sheet_id, connections in plan.items()
+    }
 
 
 def _render_kind_for_sheet(

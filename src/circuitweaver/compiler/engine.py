@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from circuitweaver.compiler.auto_router import AutoRouter
-from circuitweaver.compiler.connectivity import build_sheet_connectivity
+from circuitweaver.compiler.connectivity import build_connection_plan, build_sheet_connectivity
 from circuitweaver.compiler.global_nets import GlobalNetResolver
 from circuitweaver.compiler.layout_quality import LayoutQualityChecker, LayoutQualityReport
 from circuitweaver.library.pinout import get_symbol_info
@@ -382,15 +382,15 @@ class CompileEngine:
         symbol_map = self._load_symbols(source_components)
 
         # 2. Connectivity pre-processing
-        connectivity_elements, sheet_connectivity = self._process_connectivity(
-            source_traces,
-            source_ports,
-            source_nets,
-            element_to_sheet,
-            element_to_group,
-            source_groups,
-            elements,
-            GlobalNetResolver.from_elements(elements),
+        connectivity_elements, sheet_connectivity = build_connection_plan(
+            traces=source_traces,
+            ports=source_ports,
+            nets=source_nets,
+            element_to_sheet=element_to_sheet,
+            element_to_group=element_to_group,
+            groups=source_groups,
+            elements=elements,
+            global_resolver=GlobalNetResolver.from_elements(elements),
         )
 
         final_positioned_elements: list[CircuitElement] = []
@@ -584,7 +584,7 @@ class CompileEngine:
         elements: list[CircuitElement],
         global_resolver: GlobalNetResolver,
     ) -> tuple[list[CircuitElement], dict[str, list[dict[str, Any]]]]:
-        """Process connectivity to create labels and hierarchical pins."""
+        """Compatibility wrapper returning legacy connectivity dictionaries."""
         return build_sheet_connectivity(
             traces=traces,
             ports=ports,

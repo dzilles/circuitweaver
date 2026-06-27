@@ -4,12 +4,20 @@ from pathlib import Path
 
 import pytest
 
-from circuitweaver.compiler.connectivity import build_logical_nets, build_sheet_connectivity
+from circuitweaver.compiler.connectivity import (
+    build_connection_plan,
+    build_logical_nets,
+    build_sheet_connectivity,
+)
 from circuitweaver.compiler.engine import CompileEngine
 from circuitweaver.compiler.global_nets import GlobalNetResolver
 from circuitweaver.io.json import read_circuit
+from circuitweaver.transform.source_to_layout import SourceToLayoutTransform
 from circuitweaver.types import (
     SchematicHierarchicalPin,
+    SchematicNetLabel,
+    SheetConnection,
+    SourceComponent,
     SourceGroup,
     SourceNet,
     SourcePort,
@@ -113,6 +121,96 @@ def test_direct_two_port_trace_without_source_net_remains_wire_rendered():
     )
 
     assert sheet_connectivity["root"][0]["render_kind"] == "wire"
+
+
+def test_connection_plan_returns_typed_sheet_connections_with_legacy_adapter():
+    ports = [
+        SourcePort(source_port_id="P1", source_component_id="U1", name="1"),
+        SourcePort(source_port_id="P2", source_component_id="U2", name="1"),
+    ]
+    trace = SourceTrace(source_trace_id="T1", connected_source_port_ids=["P1", "P2"])
+
+    _, plan = build_connection_plan(
+        traces=[trace],
+        ports=ports,
+        nets=[],
+        element_to_sheet={"P1": "root", "P2": "root"},
+        element_to_group={"U1": "root", "U2": "root"},
+        groups=[],
+        elements=[],
+        global_resolver=GlobalNetResolver.from_elements([]),
+    )
+    _, legacy = build_sheet_connectivity(
+        traces=[trace],
+        ports=ports,
+        nets=[],
+        element_to_sheet={"P1": "root", "P2": "root"},
+        element_to_group={"U1": "root", "U2": "root"},
+        groups=[],
+        elements=[],
+        global_resolver=GlobalNetResolver.from_elements([]),
+    )
+
+    connection = plan["root"][0]
+    assert isinstance(connection, SheetConnection)
+    assert connection.trace_id == "T1"
+    assert connection.render_kind == "wire"
+    assert connection.endpoint_port_ids == ("P1", "P2")
+    assert legacy["root"][0] == connection.to_legacy_dict()
+
+
+def test_source_to_layout_consumes_typed_sheet_connection():
+    elements = [
+        SourceComponent(source_component_id="U1", name="U1"),
+        SourceComponent(source_component_id="U2", name="U2"),
+        SourcePort(source_port_id="P1", source_component_id="U1", name="1"),
+        SourcePort(source_port_id="P2", source_component_id="U2", name="1"),
+    ]
+    connection = SheetConnection(
+        net_id="T1",
+        trace_ids=("T1",),
+        sheet_id="root",
+        endpoint_port_ids=("P1", "P2"),
+        render_kind="wire",
+        label_text="NET_T1",
+        hierarchical_label_text="HPIN_T1",
+    )
+
+    layout, _ = SourceToLayoutTransform().transform(
+        "root",
+        elements,
+        sheet_connectivity={"root": [connection]},
+    )
+
+    assert any(edge.id == "e_T1_P2" for edge in layout.edges)
+
+
+def test_source_to_layout_converts_legacy_dicts_at_boundary():
+    elements = [
+        SourceComponent(source_component_id="U1", name="U1"),
+        SourcePort(source_port_id="P1", source_component_id="U1", name="1"),
+    ]
+    legacy_connection = {
+        "trace_id": "T1",
+        "net_id": "N1",
+        "ports": ["P1"],
+        "is_global_net": True,
+        "label_text": "VCC",
+    }
+
+    _, registry = SourceToLayoutTransform().transform(
+        "root",
+        elements,
+        sheet_connectivity={"root": [legacy_connection]},
+    )
+
+    labels = [
+        element
+        for element in registry.layout_to_element.values()
+        if isinstance(element, SchematicNetLabel)
+    ]
+    assert labels[0].text == "VCC"
+    assert labels[0].is_global is True
 
 
 def test_non_global_inter_sheet_net_creates_hierarchical_pin_plans():

@@ -6,7 +6,7 @@ that can be processed by the ELK layout engine.
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from circuitweaver.types import (
     CircuitElement,
@@ -14,10 +14,12 @@ from circuitweaver.types import (
     LayoutNode,
     LayoutPort,
     Point,
+    RenderKind,
     SchematicHierarchicalLabel,
     SchematicHierarchicalPin,
     SchematicNetLabel,
     SchematicNoConnect,
+    SheetConnection,
     SourceComponent,
     SourceGroup,
     SourcePort,
@@ -105,7 +107,7 @@ class _TransformContext:
     root_node: LayoutNode
     registry: LayoutRegistry
     symbol_map: dict[str, Any]  # symbol_id -> SymbolInfo
-    sheet_connectivity: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    sheet_connectivity: dict[str, list[SheetConnection]] = field(default_factory=dict)
     # Map of element_id -> Parent LayoutNode
     node_map: dict[str, LayoutNode] = field(default_factory=dict)
 
@@ -124,7 +126,7 @@ class SourceToLayoutTransform:
         self,
         sheet_id: str,
         elements: list[CircuitElement],
-        sheet_connectivity: dict[str, list[dict[str, Any]]] | None = None,
+        sheet_connectivity: dict[str, list[SheetConnection | dict[str, Any]]] | None = None,
     ) -> tuple[LayoutNode, LayoutRegistry]:
         """Transform source elements into a LayoutNode graph."""
         registry = LayoutRegistry()
@@ -145,7 +147,7 @@ class SourceToLayoutTransform:
             root_node=root_node,
             registry=registry,
             symbol_map=self.symbol_map,
-            sheet_connectivity=sheet_connectivity or {},
+            sheet_connectivity=self._normalize_sheet_connectivity(sheet_connectivity or {}),
         )
         ctx.node_map[sheet_id] = root_node
 
@@ -166,6 +168,57 @@ class SourceToLayoutTransform:
         self._resize_group_nodes(ctx.root_node)
 
         return root_node, registry
+
+    @staticmethod
+    def _normalize_sheet_connectivity(
+        sheet_connectivity: dict[str, list[SheetConnection | dict[str, Any]]],
+    ) -> dict[str, list[SheetConnection]]:
+        """Convert legacy dictionaries at the boundary; layout consumes typed plans."""
+        normalized: dict[str, list[SheetConnection]] = {}
+        for sheet_id, connections in sheet_connectivity.items():
+            normalized[sheet_id] = [
+                conn
+                if isinstance(conn, SheetConnection)
+                else SourceToLayoutTransform._legacy_connection(sheet_id, conn)
+                for conn in connections
+            ]
+        return normalized
+
+    @staticmethod
+    def _legacy_connection(sheet_id: str, conn: dict[str, Any]) -> SheetConnection:
+        trace_id = str(conn.get("trace_id") or conn.get("net_id") or "trace")
+        trace_ids = tuple(conn.get("trace_ids") or [trace_id])
+        port_ids = tuple(conn.get("ports") or ())
+        net_id = str(conn.get("net_id") or trace_id)
+        render_kind = conn.get("render_kind")
+        if render_kind not in {"wire", "local_label", "global_label", "hierarchical_label"}:
+            render_kind = SourceToLayoutTransform._legacy_render_kind(conn, len(port_ids))
+
+        label_text = str(conn.get("label_text") or (net_id if render_kind == "global_label" else f"NET_{net_id}"))
+        hierarchical_label_text = str(conn.get("hier_label_text") or f"HPIN_{net_id}")
+        return SheetConnection(
+            net_id=net_id,
+            trace_ids=trace_ids,
+            sheet_id=sheet_id,
+            endpoint_port_ids=port_ids,
+            render_kind=cast(RenderKind, render_kind),
+            label_text=label_text,
+            hierarchical_label_text=hierarchical_label_text,
+            source_net_id=net_id if conn.get("is_named_net") else None,
+            hierarchical_pin_id=conn.get("hpin_id"),
+            is_inter_group=bool(conn.get("is_inter_group")),
+            is_inter_sheet=bool(conn.get("is_inter_sheet")),
+        )
+
+    @staticmethod
+    def _legacy_render_kind(conn: dict[str, Any], endpoint_count: int) -> RenderKind:
+        if conn.get("is_global_net"):
+            return "global_label"
+        if conn.get("is_inter_sheet"):
+            return "hierarchical_label"
+        if conn.get("is_inter_group") or (endpoint_count < 2 and conn.get("is_named_net")):
+            return "local_label"
+        return "wire"
 
     def _build_node_hierarchy(self, ctx: _TransformContext) -> None:
         """Create LayoutNodes for all groups (subcircuits and subgroups)."""
@@ -373,13 +426,13 @@ class SourceToLayoutTransform:
         outgoing: dict[str, set[str]] = {}
 
         for conn in ctx.sheet_connectivity.get(ctx.sheet_id, []):
-            endpoint_ids = sorted(conn.get("ports", []))
+            endpoint_ids = sorted(conn.endpoint_port_ids)
             endpoints: list[tuple[str, str]] = []
             for endpoint_id in endpoint_ids:
                 port = port_map.get(endpoint_id)
                 if port and port.source_component_id in component_to_node:
                     endpoints.append((component_to_node[port.source_component_id], self._port_role(port)))
-            hpin_id = conn.get("hpin_id")
+            hpin_id = conn.hierarchical_pin_id
             if hpin_id and hpin_id in hpin_to_box:
                 endpoints.append((hpin_to_box[hpin_id], "unknown"))
 
@@ -497,71 +550,20 @@ class SourceToLayoutTransform:
         )
 
     def _add_connectivity(self, ctx: _TransformContext) -> None:
-        """Add edges or labels based on crossing group boundaries."""
+        """Add edges or labels from the precomputed connectivity render plan."""
         sheet_conn = ctx.sheet_connectivity.get(ctx.sheet_id, [])
-        component_to_group = self._build_comp_group_map(ctx)
 
-        for conn in sorted(sheet_conn, key=lambda c: c.get("trace_id", "")):
-            port_ids = sorted(conn.get("ports", []))
+        for conn in sorted(sheet_conn, key=lambda c: c.trace_id):
+            port_ids = sorted(conn.endpoint_port_ids)
             if not port_ids:
                 continue
 
-            render_kind = conn.get("render_kind")
-            if render_kind in {"local_label", "global_label", "hierarchical_label"}:
+            if conn.render_kind in {"local_label", "global_label", "hierarchical_label"}:
                 self._add_labels(conn, port_ids, ctx)
-                continue
-            if render_kind == "wire":
+            elif conn.render_kind == "wire":
                 self._add_wires(conn, port_ids, ctx)
-                continue
 
-            # 1. Determine group membership for all ports in this trace
-            port_groups = []
-            for pid in port_ids:
-                sport = next(
-                    (
-                        e
-                        for e in ctx.elements
-                        if isinstance(e, SourcePort) and e.source_port_id == pid
-                    ),
-                    None,
-                )
-                group = component_to_group.get(sport.source_component_id) if sport else None
-                port_groups.append(group)
-
-            # 2. Decide: Wires or Labels?
-            # If all ports are in the same subgroup, use Wires.
-            # If they span different subgroups, use Labels.
-            is_cross_group = (
-                len(set(port_groups)) > 1
-                or conn.get("is_inter_sheet")
-                or conn.get("is_global_net")
-                or (len(port_ids) < 2 and conn.get("is_named_net"))
-            )
-
-            if not is_cross_group:
-                self._add_wires(conn, port_ids, ctx)
-            else:
-                self._add_labels(conn, port_ids, ctx)
-
-    def _build_comp_group_map(self, ctx: _TransformContext) -> dict[str, str]:
-        """Maps component ID to its parent subgroup ID (if any)."""
-        mapping = {}
-        for comp in [e for e in ctx.elements if isinstance(e, SourceComponent)]:
-            if comp.source_group_id:
-                # Only map if it's a subgroup (on the same sheet)
-                group = next(
-                    (
-                        g
-                        for g in ctx.elements
-                        if isinstance(g, SourceGroup) and g.source_group_id == comp.source_group_id
-                    ),
-                    None,
-                )
-                if group and not group.is_subcircuit:
-                    mapping[comp.source_component_id] = comp.source_group_id
-        return mapping
-
-    def _add_wires(self, conn: dict[str, Any], port_ids: list[str], ctx: _TransformContext) -> None:
+    def _add_wires(self, conn: SheetConnection, port_ids: list[str], ctx: _TransformContext) -> None:
         """Connect ports with physical ELK edges."""
         src_elk_id = ctx.registry.element_to_port.get(port_ids[0])
         if not src_elk_id:
@@ -573,7 +575,7 @@ class SourceToLayoutTransform:
                 # Add edge to the lowest common ancestor node (usually root or subgroup box)
                 ctx.root_node.edges.append(
                     LayoutEdge(
-                        id=f"e_{conn['trace_id']}_{target_port_id}",
+                        id=f"e_{conn.trace_id}_{target_port_id}",
                         sources=[src_elk_id],
                         targets=[tgt_elk_id],
                     )
@@ -595,23 +597,22 @@ class SourceToLayoutTransform:
         return ctx.root_node
 
     def _add_labels(
-        self, conn: dict[str, Any], port_ids: list[str], ctx: _TransformContext
+        self, conn: SheetConnection, port_ids: list[str], ctx: _TransformContext
     ) -> None:
         """Connect ports using local Net Labels instead of wires."""
         net_name = (
-            conn.get("hier_label_text")
-            if conn.get("render_kind") == "hierarchical_label"
-            or (conn.get("is_inter_sheet") and not conn.get("is_global_net"))
-            else conn.get("label_text")
+            conn.hierarchical_label_text
+            if conn.render_kind == "hierarchical_label"
+            else conn.label_text
         )
-        net_name = net_name or f"NET_{conn['trace_id']}"
+        net_name = net_name or f"NET_{conn.trace_id}"
 
         for pid in port_ids:
             elk_port_id = ctx.registry.element_to_port.get(pid)
             if not elk_port_id:
                 continue
 
-            label_id = f"label_{conn['trace_id']}_{pid}"
+            label_id = f"label_{conn.trace_id}_{pid}"
             label_node = LayoutNode(id=f"label_node_{label_id}", width=len(net_name) * 7, height=10)
 
             # Place label node in the same parent as its component
@@ -621,12 +622,12 @@ class SourceToLayoutTransform:
             # Create the visual element later during layout_to_schematic
             label_kwargs = {
                 "sheet_id": ctx.sheet_id,
-                "source_net_id": conn.get("net_id") or f"net_{conn['trace_id']}",
+                "source_net_id": conn.net_id,
                 "source_port_id": pid,
                 "text": net_name,
                 "center": Point(x=0, y=0),
             }
-            if conn.get("is_inter_sheet") and not conn.get("is_global_net"):
+            if conn.render_kind == "hierarchical_label":
                 label_obj = SchematicHierarchicalLabel.model_construct(
                     schematic_hierarchical_label_id=label_id,
                     **label_kwargs,
@@ -634,7 +635,7 @@ class SourceToLayoutTransform:
             else:
                 label_obj = SchematicNetLabel.model_construct(
                     schematic_net_label_id=label_id,
-                    is_global=bool(conn.get("is_global_net")),
+                    is_global=conn.is_global_net,
                     **label_kwargs,
                 )
             ctx.registry.register_node(label_obj, f"label_node_{label_id}")
@@ -644,22 +645,6 @@ class SourceToLayoutTransform:
                     id=f"e_label_{label_id}",
                     sources=[elk_port_id],
                     targets=[f"label_node_{label_id}"],
-                )
-            )
-
-    def _add_hierarchical_edge(
-        self, conn: dict[str, Any], port_id: str, ctx: _TransformContext
-    ) -> None:
-        """Draw an edge between a component port and a hierarchical pin on the root page."""
-        src_elk_id = ctx.registry.element_to_port.get(port_id)
-        hpin_elk_id = ctx.registry.element_to_port.get(conn["hpin_id"])
-
-        if src_elk_id and hpin_elk_id:
-            ctx.root_node.edges.append(
-                LayoutEdge(
-                    id=f"e_to_hpin_{conn['trace_id']}_{get_element_id(port_id)}",
-                    sources=[src_elk_id],
-                    targets=[hpin_elk_id],
                 )
             )
 

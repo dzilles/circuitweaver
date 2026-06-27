@@ -35,6 +35,7 @@ Completed first-slice work:
 
 - Added `src/circuitweaver/compiler/connectivity.py` with typed logical-net and sheet-connection planning.
 - Kept `CompileEngine._process_connectivity()` as a compatibility wrapper over the new planner.
+- Moved the main compiler layout path to typed `SheetConnection` plans; legacy dictionaries are normalized only at the layout boundary for older callers/tests.
 - Fixed one-port power/ground nets so they render as global-label plans instead of disappearing.
 - Fixed KiCad symbol resolution to use `ftype` inference when `symbol_id` is absent.
 - Added in-memory validation through `validate_circuit_elements()`.
@@ -299,7 +300,7 @@ Acceptance:
 
 ### Phase 3: Build a typed render plan
 
-Status: partially completed. `SheetConnection` and explicit `render_kind` values exist, but the layout boundary still receives legacy dictionaries through a compatibility adapter.
+Status: mostly completed. `SheetConnection` and explicit `render_kind` values drive the main layout path. A compatibility adapter still accepts legacy dictionaries at the layout boundary.
 
 Add a second pure function:
 
@@ -334,7 +335,7 @@ Acceptance:
 
 ### Phase 4: Migrate layout to consume the render plan
 
-Status: partially completed. `SourceToLayoutTransform` honors `render_kind`, but the public handoff is still the legacy `dict[str, Any]` shape.
+Status: mostly completed. `SourceToLayoutTransform` consumes typed `SheetConnection` objects internally and honors `render_kind`; legacy `dict[str, Any]` input is converted at the transform boundary.
 
 Change `CompileEngine.layout()` to:
 
@@ -442,13 +443,12 @@ Acceptance:
 
 ## Suggested Next Work Item
 
-Continue with Phase 7 documentation cleanup first, then finish Phase 3 and Phase 4 by removing the legacy dictionary boundary between the compiler and layout transform.
+Phase 7 documentation cleanup and the typed compiler-to-layout handoff are now started. Continue by shrinking remaining compatibility-only dictionary usage and hardening nested hierarchy behavior.
 
 Near-term technical cleanup:
 
-- Make `SourceToLayoutTransform` accept typed `SheetConnection` objects directly.
-- Keep a small adapter only at the outer compatibility boundary if needed by existing tests.
-- Move high-level render decisions entirely out of layout transform code.
+- Remove or isolate remaining legacy connectivity dictionary tests over time.
+- Move legacy connectivity adapters out of `SourceToLayoutTransform` once external callers no longer need them.
 - Add tests around generated hierarchical elements for nested subcircuits before changing that path further.
 
 ## Historical First Work Item
