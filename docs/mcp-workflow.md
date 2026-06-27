@@ -31,6 +31,10 @@ Start with logic-only `source_*` elements:
 - `source_trace`
 - `source_group`
 
+Do not hand-author `schematic_*` elements in normal design files. CircuitWeaver
+generates them during layout and writes them only as internal/debug schematic
+JSON.
+
 ## 4. Validate
 
 Call `validate_circuit_json` on the JSON file and fix all errors before creating schematics.

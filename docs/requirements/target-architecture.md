@@ -13,7 +13,7 @@ Status flags:
 ## Compiler Architecture
 
 - [implemented] `ARCH-001` The compiler shall expose separate parse, validate, layout, schematic, KiCad transform, and write stages.
-  `CompileEngine` exposes stage methods for parse, validate, layout, schematic, KiCad transform, and write. Validation is still path-backed when using existing validation rules, and the legacy `compile` wrapper remains.
+  `CompileEngine` exposes stage methods for parse, validate, layout, schematic, KiCad transform, and write. Validation supports file-backed and in-memory parsed projects, and the legacy `compile` wrapper remains.
 - [implemented] `ARCH-002` The compiler shall provide a pure in-memory pipeline that can run through schematic and KiCad S-expression generation without writing files.
   `CompileEngine.kicad_project()` returns in-memory schematic S-expressions and project JSON content.
 - [implemented] `ARCH-003` File-writing shall be isolated in an explicit output stage.
@@ -40,7 +40,7 @@ Status flags:
 - [implemented] `VALP-004` The `compile-ready` validation profile shall validate that a design has enough information and environment support to generate KiCad files.
 - [implemented] `VALP-005` The `erc-ready` validation profile shall validate that generated KiCad files and `kicad-cli` are available for ERC.
 - [implemented] `VALP-006` Validation results shall report which profile produced each error or warning.
-- [implemented] `VALP-007` Inactive validation rules shall either be updated and activated under a profile or removed from the active source tree.
+- [partial] `VALP-007` Validation profiles shall define the active rule sets. Inactive rule files still exist and should either be updated and activated under a profile or removed from the active source tree.
 
 ## Structured MCP Results
 

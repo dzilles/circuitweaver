@@ -160,22 +160,30 @@ circuitweaver serve --transport http --port 3000
 
 ## Circuit JSON Format
 
-CircuitWeaver uses a two-layer architecture:
+CircuitWeaver is source-first. User-authored JSON should normally describe
+electrical intent with `source_*` elements only:
 
-### Source Types (Logical Layer)
-Define **what** exists in the circuit:
-- `source_component`: Part definition (value, footprint, MPN)
-- `source_port`: Pin/terminal on a component
-- `source_net`: Named electrical net
-- `source_trace`: Logical connection
+- `source_component`: Part definition, value, footprint, MPN, and optional KiCad symbol mapping.
+- `source_port`: Pin or terminal on a source component.
+- `source_net`: Named electrical net such as `VCC`, `GND`, or `I2C_SDA`.
+- `source_trace`: Logical connection between ports and optional named nets.
+- `source_group`: Logical cluster or hierarchical schematic page.
 
-### Schematic Types (Visual Layer)
-Define **where** things appear:
-- `schematic_component`: Visual placement of a component
-- `schematic_port`: Connection point on a component
-- `schematic_trace`: Wire connecting ports
-- `schematic_box`: Visual grouping box
-- `schematic_net_label`: Net name label
+During compilation CircuitWeaver derives connectivity, runs auto-layout, and
+generates `schematic_*` elements internally before writing KiCad files. Treat
+`schematic_*` JSON as generated/debug output unless you are deliberately testing
+or extending the compiler internals.
+
+Current pipeline boundary:
+
+```text
+source_* JSON
+  -> connectivity model
+  -> render plan
+  -> ELK layout graph
+  -> generated schematic_* model
+  -> KiCad .kicad_sch/.kicad_pro files
+```
 
 ### Example
 
@@ -183,22 +191,36 @@ Define **where** things appear:
 [
   {
     "type": "source_component",
-    "source_component_id": "src_r1",
+    "source_component_id": "comp_r1",
     "name": "R1",
-    "value": "10k",
+    "ftype": "simple_resistor",
+    "display_value": "10k",
     "footprint": "Resistor_SMD:R_0603_1608Metric"
   },
   {
-    "type": "schematic_component",
-    "schematic_component_id": "sch_r1",
-    "source_component_id": "src_r1",
-    "center": { "x": 20, "y": 30 },
-    "rotation": 0
+    "type": "source_port",
+    "source_port_id": "port_r1_1",
+    "source_component_id": "comp_r1",
+    "name": "1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "net_vcc",
+    "name": "VCC",
+    "is_power": true
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "trace_vcc_r1",
+    "connected_source_port_ids": ["port_r1_1"],
+    "connected_source_net_ids": ["net_vcc"]
   }
 ]
 ```
 
-See [Circuit JSON Specification](docs/circuit-json-spec.md) for the complete format.
+See [Circuit JSON Specification](docs/circuit-json-spec.md) for the complete
+source-authoring format.
 
 ## MCP Tools
 

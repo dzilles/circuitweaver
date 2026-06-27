@@ -103,7 +103,7 @@
 - [implemented] `CMP-035` Hierarchical sheet boxes shall become KiCad `sheet` expressions with Sheetname and Sheetfile properties.
 - [implemented] `CMP-036` Schematic components shall become KiCad `symbol` expressions.
 - [implemented] `CMP-037` Component reference text shall come from `SourceComponent.name` when available, otherwise `U?`.
-- [implemented] `CMP-038` Component value text shall come from `SourceComponent.display_value` when present; otherwise from `SourceComponent.symbol_id`; otherwise an empty string.
+- [implemented] `CMP-038` Component value text shall come from `SourceComponent.display_value` when present; otherwise from the effective symbol ID derived from `symbol_id` or `ftype`; otherwise an empty string.
 - [implemented] `CMP-039` Component footprint property shall be emitted only when `SourceComponent.footprint` is present.
 - [implemented] `CMP-040` Schematic traces shall become KiCad `wire` expressions.
 - [implemented] `CMP-041` Junctions shall be emitted at rounded points used by at least three wires, ports, labels, or hierarchical pins.

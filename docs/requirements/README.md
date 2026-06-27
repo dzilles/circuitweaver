@@ -25,7 +25,7 @@ codebase.
 - [kicad-library-and-erc.md](kicad-library-and-erc.md) - KiCad path discovery, part search, symbol pinout extraction, and ERC parsing.
 - [cli-and-mcp.md](cli-and-mcp.md) - command-line interface, MCP tools, MCP resources, MCP prompts, and HTTP transport behavior.
 - [implementation-notes-and-gaps.md](implementation-notes-and-gaps.md) - current constraints, inactive code, and behavior that should not be assumed.
-- [target-architecture.md](target-architecture.md) - planned improvements that are not yet implemented.
+- [target-architecture.md](target-architecture.md) - target pipeline architecture and current implementation status.
 
 ## Requirement ID Convention
 

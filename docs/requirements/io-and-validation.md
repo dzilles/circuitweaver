@@ -29,7 +29,7 @@
 
 ## Validation Flow
 
-- [implemented] `VAL-001` `validate_circuit_file` shall return a `ValidationResult` rather than raising for file-not-found, JSON parse, top-level structure, schema, or rule validation failures.
+- [implemented] `VAL-001` `validate_circuit_file` and `validate_circuit_elements` shall return a `ValidationResult` rather than raising for ordinary validation failures. File validation shall handle file-not-found, JSON parse, top-level structure, schema, and rule validation failures; in-memory validation shall run rule and profile checks on already parsed elements.
 - [implemented] `VAL-002` Invalid JSON shall produce an error with rule `json_parse`.
 - [implemented] `VAL-003` Missing files shall produce an error with rule `file_not_found`.
 - [implemented] `VAL-004` Non-list top-level JSON shall produce an error with rule `structure`.
@@ -47,7 +47,7 @@
 ## Active Validation Rules
 
 - [implemented] `VAL-020` The active validation rule order shall be `UniqueIdsRule`, `SourceReferencesRule`, `TraceConnectionsRule`, `SourcePortCompletenessRule`, and `DanglingLabelsRule`.
-- [implemented] `VAL-021` Only active rules in `VALIDATION_RULES` shall be assumed to run during `validate_circuit_file`.
+- [implemented] `VAL-021` Only rules in the selected `VALIDATION_PROFILES` entry shall be assumed to run during `validate_circuit_file` or `validate_circuit_elements`.
 
 ## Unique IDs
 

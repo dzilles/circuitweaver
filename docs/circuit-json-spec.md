@@ -1,12 +1,12 @@
-# CircuitWeaver Logic Generator - MCP Server
+# CircuitWeaver Circuit JSON Authoring Spec
 
 You are an expert electrical engineering AI assistant. Your job is to generate the **logical netlist** for a PCB design using a flat `circuit-json` array.
 
-**CRITICAL RULE:** You are strictly responsible for the LOGIC (the "netlist"). You must NEVER generate visual or layout elements (no `schematic_component`, `schematic_trace`, `x`/`y` coordinates, etc.). A separate **Auto-Layout Engine** will automatically draw the schematic based on your logic.
+**Authoring rule:** User-authored files should normally contain only source-layer `source_*` elements. Do not author visual/layout elements such as `schematic_component`, `schematic_trace`, or explicit `x`/`y` coordinates unless you are intentionally testing compiler internals. Auto-layout generates schematic elements from the source model.
 
 ---
 
-## Valid Element Types
+## User-Authored Element Types
 
 When constructing your JSON, only use these exact `type` values:
 
@@ -17,8 +17,9 @@ When constructing your JSON, only use these exact `type` values:
 | `source_net` | A named electrical signal (e.g., VCC_3V3, GND, I2C_SDA) |
 | `source_trace` | A logical connection linking ports and/or nets |
 | `source_group` | Defines a hierarchical block or subcircuit |
+| `source_project_config` | Optional project-level settings such as global-net policy |
 
-**Any other type (especially `schematic_*` types) will cause a validation error.**
+`schematic_*` element types are supported by the generated/internal Circuit JSON model, but they are not the normal authoring interface for LLMs or users.
 
 ---
 
@@ -76,7 +77,7 @@ Defines a logical part that will appear in the BOM.
 | `simple_crystal` | `frequency` | Hz |
 | `simple_fuse` | `current_rating_amps` | Amps |
 
-If you don't know the `ftype`, omit it - the auto-layout tool will infer it from context.
+If you know the `ftype`, provide it. CircuitWeaver can infer common KiCad symbols from `ftype` values such as `simple_resistor` and `simple_led`. If you do not know the `ftype`, omit it rather than guessing.
 
 ---
 
@@ -215,20 +216,10 @@ Defines a hierarchical block, subcircuit, or logical cluster.
 
 ### Handling Unconnected Pins
 
-There are two ways to handle pins that are not connected to any trace:
-
-1.  **`do_not_connect: true` (Logical Intent):**
-    - Set this flag on a `source_port`.
-    - **Usage:** Use this if you are **unsure** if a pin should be connected, or if you are **postponing** the connection to a later design phase.
-    - **Result:** The validator will issue a **Warning** to remind you that this pin is currently open.
-
-2.  **`schematic_no_connect` (Visual Confirmation):**
-    - Define a separate `schematic_no_connect` element referencing the port.
-    - **Usage:** Use this **ONLY** when you are **absolutely certain** that the pin must remain unconnected (e.g., NC pins on an IC).
-    - **Result:** KiCad will place a visual **"X" symbol** on the pin and the ERC will ignore it.
+For user-authored source JSON, mark intentionally open pins on the `source_port`.
+The validator will issue a warning so the open pin remains visible during review.
 
 ```json
-// Example: Postponed/Uncertain connection (Logical Warning)
 {
   "type": "source_port",
   "source_port_id": "p_u1_5",
@@ -236,14 +227,9 @@ There are two ways to handle pins that are not connected to any trace:
   "name": "GPIO5",
   "do_not_connect": true
 }
-
-// Example: Confirmed No-Connect (Visual "X")
-{
-  "type": "schematic_no_connect",
-  "schematic_no_connect_id": "nc_u1_10",
-  "schematic_port_id": "sch_p_u1_10"
-}
 ```
+
+Do not author `schematic_no_connect` in normal source files. It is a generated/internal visual marker used after layout.
 
 ---
 
@@ -369,10 +355,10 @@ Example:
 
 ### 2. Draft Logic
 
-Use the MCP client's normal file-writing capability to create a flat JSON array containing **only `source_*` elements**:
+Use the MCP client's normal file-writing capability to create a flat JSON array containing source-layer elements:
 
 ```
-logic_draft.json = [source_* elements only]
+logic_draft.json = [source_* elements]
 ```
 
 ### 3. Validate
@@ -397,7 +383,7 @@ This tool:
 - Reads your logic
 - Calculates X/Y coordinates for all components
 - Routes wires between connected ports
-- Writes `logic_draft_schematic.json`
+- Writes `logic_draft_schematic.json` as generated/debug schematic JSON
 - Writes `logic_draft.kicad_sch` and `logic_draft.kicad_pro`
 
 ### 5. Compile & Check
@@ -433,7 +419,7 @@ If ERC returns errors, fix your `logic_draft.json` and repeat from step 3.
 │                                                             │
 │  4. AUTO-LAYOUT                                             │
 │     └── create_schematic("logic_draft.json")               │
-│         ↓ Adds schematic_component, schematic_trace, etc.  │
+│         ↓ Generates schematic_component, schematic_trace, etc. │
 │                                                             │
 ├─────────────────────────────────────────────────────────────┤
 │                    FINAL OUTPUT                              │
@@ -531,7 +517,8 @@ If ERC returns errors, fix your `logic_draft.json` and repeat from step 3.
   "type": "source_group",
   "source_group_id": "group_power",
   "name": "Power Supply",
-  "subcircuit_id": "power"
+  "subcircuit_id": "power",
+  "is_subcircuit": true
 },
 
 // Components in the subcircuit
@@ -587,7 +574,7 @@ Before submitting your logic JSON, verify:
 - [ ] Every `source_port` references a valid `source_component_id`
 - [ ] Every `source_trace` references valid `source_port_id`s
 - [ ] Every `source_net` referenced in traces exists
-- [ ] No `schematic_*` types (those are auto-generated)
+- [ ] No `schematic_*` types in normal user-authored files; those are generated/internal artifacts
 - [ ] No `x`, `y`, `center`, `position` coordinates (those are auto-generated)
 - [ ] Footprints are either correct KiCad strings or omitted
 
@@ -613,5 +600,4 @@ Before submitting your logic JSON, verify:
 ### If ERC returns errors:
 - Unconnected pins: Add missing `source_trace` connections
 - Power flag issues: Ensure power nets have `is_power: true`
-- These are logic errors - fix in `logic_draft.json`, not `circuit.json`
- logic errors - fix in `logic_draft.json`, not `circuit.json`
+- These are logic errors - fix in `logic_draft.json`, not generated schematic output
