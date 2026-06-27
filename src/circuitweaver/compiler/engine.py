@@ -11,12 +11,12 @@ Orchestrates the full pipeline from Source elements to KiCad files:
 import json
 import logging
 import os
-from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from circuitweaver.compiler.auto_router import AutoRouter
+from circuitweaver.compiler.connectivity import build_sheet_connectivity
 from circuitweaver.compiler.global_nets import GlobalNetResolver
 from circuitweaver.compiler.layout_quality import LayoutQualityChecker, LayoutQualityReport
 from circuitweaver.library.pinout import get_symbol_info
@@ -31,10 +31,7 @@ from circuitweaver.transform import (
 from circuitweaver.types import (
     CircuitElement,
     LayoutNode,
-    Point,
     SchematicComponent,
-    SchematicHierarchicalPin,
-    SchematicNetLabel,
     SchematicPort,
     SourceComponent,
     SourceGroup,
@@ -44,7 +41,6 @@ from circuitweaver.types import (
     get_element_id,
     s_expr_serialize,
 )
-from circuitweaver.validator.result import ValidationResult
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +123,9 @@ class CompileEngine:
 
             validation = validate_circuit_file(project.source_path)
         else:
-            validation = ValidationResult()
+            from circuitweaver.validator import validate_circuit_elements
+
+            validation = validate_circuit_elements(project.elements)
 
         for error in validation.errors:
             result.diagnostics.append(
@@ -587,127 +585,16 @@ class CompileEngine:
         global_resolver: GlobalNetResolver,
     ) -> tuple[list[CircuitElement], dict[str, list[dict[str, Any]]]]:
         """Process connectivity to create labels and hierarchical pins."""
-        generated = []
-        sheet_connectivity = defaultdict(list)
-        port_map = {p.source_port_id: p for p in ports}
-        net_map = {n.source_net_id: n for n in nets}
-
-        nets_to_ports = defaultdict(list)
-        for trace in traces:
-            involved_ports = [
-                port_map[pid] for pid in trace.connected_source_port_ids if pid in port_map
-            ]
-            if not involved_ports:
-                continue
-
-            net_id = (
-                trace.connected_source_net_ids[0]
-                if trace.connected_source_net_ids
-                else trace.source_trace_id
-            )
-            raw_name = (
-                net_map[net_id].name
-                if (trace.connected_source_net_ids and net_id in net_map)
-                else trace.source_trace_id
-            )
-            net_name, hier_name = f"NET_{raw_name}", f"HPIN_{raw_name}"
-            nets_to_ports[(net_id, net_name, hier_name)].extend(involved_ports)
-
-            involved_sheets = {
-                element_to_sheet[p.source_port_id]
-                for p in involved_ports
-                if p.source_port_id in element_to_sheet
-            }
-            for sid in involved_sheets:
-                ports_in_sheet = [
-                    p for p in involved_ports if element_to_sheet.get(p.source_port_id) == sid
-                ]
-                sheet_connectivity[sid].append(
-                    {
-                        "trace_id": trace.source_trace_id,
-                        "net_id": net_id,
-                        "ports": [p.source_port_id for p in ports_in_sheet],
-                        "is_inter_group": False,
-                        "is_inter_sheet": False,
-                        "is_global_net": False,
-                        "label_text": net_name,
-                        "hier_label_text": hier_name,
-                        "hpin_id": None,
-                    }
-                )
-
-        for (net_id, net_name, hier_name), involved_ports in nets_to_ports.items():
-            involved_sheets = {
-                element_to_sheet[p.source_port_id]
-                for p in involved_ports
-                if p.source_port_id in element_to_sheet
-            }
-            raw_name = net_name.removeprefix("NET_")
-            is_global = global_resolver.is_global(net_map.get(net_id), net_id, raw_name)
-            sheet_to_hpin_id = {}
-            is_inter_sheet = len(involved_sheets) > 1 and not is_global
-
-            if is_inter_sheet:
-                for sid in involved_sheets:
-                    if sid == "root":
-                        continue
-                    curr = sid
-                    while curr != "root":
-                        parent = element_to_sheet.get(curr, "root")
-                        hpin_id = f"hpin_{net_id}_{curr}"
-                        if not any(
-                            isinstance(e, SchematicHierarchicalPin)
-                            and e.schematic_hierarchical_pin_id == hpin_id
-                            for e in elements + generated
-                        ):
-                            generated.append(
-                                SchematicHierarchicalPin(
-                                    schematic_hierarchical_pin_id=hpin_id,
-                                    sheet_id=parent,
-                                    source_net_id=net_id,
-                                    schematic_box_id=f"box_{curr}",
-                                    center=Point(x=0, y=0),
-                                    text=hier_name,
-                                )
-                            )
-                            generated.append(
-                                SchematicNetLabel(
-                                    schematic_net_label_id=f"root_label_{net_id}_{curr}",
-                                    sheet_id=parent,
-                                    source_net_id=net_id,
-                                    schematic_hierarchical_pin_id=hpin_id,
-                                    center=Point(x=0, y=0),
-                                    text=hier_name,
-                                )
-                            )
-                        sheet_to_hpin_id[curr] = hpin_id
-                        sheet_to_hpin_id[parent] = hpin_id
-                        curr = parent
-
-            for sid in involved_sheets:
-                ports_in_sheet = [
-                    p for p in involved_ports if element_to_sheet.get(p.source_port_id) == sid
-                ]
-                involved_groups = {
-                    element_to_group.get(p.source_component_id, "root") for p in ports_in_sheet
-                }
-                is_inter_group_on_sheet = len(involved_groups) > 1
-                needs_local_labels = is_inter_group_on_sheet or is_global
-
-                for conn in sheet_connectivity[sid]:
-                    if conn["net_id"] == net_id:
-                        conn["is_inter_group"] = is_inter_group_on_sheet
-                        conn["is_inter_sheet"] = len(involved_sheets) > 1
-                        conn["is_global_net"] = is_global
-                        conn["label_text"] = raw_name if is_global else net_name
-                        conn["hier_label_text"] = hier_name
-                        conn["hpin_id"] = sheet_to_hpin_id.get(sid)
-
-                if needs_local_labels:
-                    # Labels are now generated and positioned by the layout engine
-                    pass
-
-        return generated, sheet_connectivity
+        return build_sheet_connectivity(
+            traces=traces,
+            ports=ports,
+            nets=nets,
+            element_to_sheet=element_to_sheet,
+            element_to_group=element_to_group,
+            groups=_groups,
+            elements=elements,
+            global_resolver=global_resolver,
+        )
 
     def run_erc(self, schematic_path: Path) -> dict[str, Any]:
         """Run ERC on a generated schematic.

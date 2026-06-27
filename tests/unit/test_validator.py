@@ -3,7 +3,9 @@
 import json
 from pathlib import Path
 
-from circuitweaver.validator import validate_circuit_file
+from circuitweaver.compiler.engine import CompileEngine
+from circuitweaver.types import SourcePort
+from circuitweaver.validator import validate_circuit_elements, validate_circuit_file
 
 
 class TestValidateCircuitFile:
@@ -89,6 +91,43 @@ class TestValidateCircuitFile:
         assert "source_net_id" in warning_text
         assert "CircuitWeaver ignores unknown fields" in warning_text
         assert "connected_source_net_ids" in warning_text
+
+
+class TestValidateCircuitElements:
+    """Tests for validation of already-parsed models."""
+
+    def test_in_memory_elements_run_reference_rules(self):
+        """Test that direct element validation is not bypassed."""
+        result = validate_circuit_elements(
+            [
+                SourcePort(
+                    source_port_id="P1",
+                    source_component_id="missing",
+                    name="1",
+                )
+            ]
+        )
+
+        assert not result.is_valid
+        assert any(error.rule == "source_references" for error in result.errors)
+
+    def test_compile_engine_validates_in_memory_project(self):
+        """Test that CompileEngine.validate_project uses in-memory validation."""
+        engine = CompileEngine()
+        project = engine.project_from_elements(
+            [
+                SourcePort(
+                    source_port_id="P1",
+                    source_component_id="missing",
+                    name="1",
+                )
+            ]
+        )
+
+        result = engine.validate_project(project)
+
+        assert not result.ok
+        assert any(diag.code == "source_references" for diag in result.diagnostics)
 
 
 class TestUniqueIds:

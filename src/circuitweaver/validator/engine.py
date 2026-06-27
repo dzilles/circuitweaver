@@ -166,6 +166,34 @@ def validate_circuit_file(file_path: Path, profile: str = "source") -> Validatio
     return result
 
 
+def validate_circuit_elements(
+    elements: list[CircuitElement],
+    profile: str = "source",
+) -> ValidationResult:
+    """Validate already-parsed Circuit elements.
+
+    This skips raw JSON schema and unknown-field checks because callers already
+    hold typed models.  It still runs the same reference and profile rules as
+    file-backed validation.
+    """
+    if profile not in VALIDATION_PROFILES:
+        raise ValueError(
+            f"Unknown validation profile: {profile}. "
+            f"Available profiles: {', '.join(sorted(VALIDATION_PROFILES))}"
+        )
+
+    result = ValidationResult()
+    context = _build_validation_context(elements)
+    for rule_class in VALIDATION_PROFILES[profile]:
+        rule = rule_class()
+        rule_result = rule.validate(elements, context)
+        _tag_profile(rule_result, profile)
+        result.merge(rule_result)
+
+    _run_profile_checks(profile, elements, context, result)
+    return result
+
+
 def _tag_profile(result: ValidationResult, profile: str) -> None:
     for message in [*result.errors, *result.warnings]:
         message.profile = profile

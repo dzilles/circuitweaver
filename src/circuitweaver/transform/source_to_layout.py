@@ -506,6 +506,14 @@ class SourceToLayoutTransform:
             if not port_ids:
                 continue
 
+            render_kind = conn.get("render_kind")
+            if render_kind in {"local_label", "global_label", "hierarchical_label"}:
+                self._add_labels(conn, port_ids, ctx)
+                continue
+            if render_kind == "wire":
+                self._add_wires(conn, port_ids, ctx)
+                continue
+
             # 1. Determine group membership for all ports in this trace
             port_groups = []
             for pid in port_ids:
@@ -523,7 +531,12 @@ class SourceToLayoutTransform:
             # 2. Decide: Wires or Labels?
             # If all ports are in the same subgroup, use Wires.
             # If they span different subgroups, use Labels.
-            is_cross_group = len(set(port_groups)) > 1 or conn.get("is_inter_sheet")
+            is_cross_group = (
+                len(set(port_groups)) > 1
+                or conn.get("is_inter_sheet")
+                or conn.get("is_global_net")
+                or (len(port_ids) < 2 and conn.get("is_named_net"))
+            )
 
             if not is_cross_group:
                 self._add_wires(conn, port_ids, ctx)
@@ -587,7 +600,8 @@ class SourceToLayoutTransform:
         """Connect ports using local Net Labels instead of wires."""
         net_name = (
             conn.get("hier_label_text")
-            if conn.get("is_inter_sheet") and not conn.get("is_global_net")
+            if conn.get("render_kind") == "hierarchical_label"
+            or (conn.get("is_inter_sheet") and not conn.get("is_global_net"))
             else conn.get("label_text")
         )
         net_name = net_name or f"NET_{conn['trace_id']}"

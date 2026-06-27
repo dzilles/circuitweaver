@@ -228,6 +228,22 @@ class TestSchematicToSExprTransform:
         lib_id = transform._resolve_lib_id(comp, source)
         assert lib_id == "Device:R"
 
+    def test_resolve_lib_id_from_source_ftype(self, transform):
+        """Test resolving library ID from source component ftype."""
+        comp = SchematicComponent(
+            schematic_component_id="sch_comp_1",
+            source_component_id="comp_1",
+            center=Point(x=0, y=0),
+            sheet_id="root",
+        )
+        source = SourceComponent(
+            source_component_id="comp_1",
+            name="LED1",
+            ftype="simple_led",
+        )
+        lib_id = transform._resolve_lib_id(comp, source)
+        assert lib_id == "Device:LED"
+
     def test_resolve_lib_id_fallback(self, transform):
         """Test fallback library ID when none specified."""
         comp = SchematicComponent(

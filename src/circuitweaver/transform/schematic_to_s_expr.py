@@ -11,6 +11,7 @@ from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
+from circuitweaver.transform.source_to_layout import get_effective_symbol_id
 from circuitweaver.types import (
     CircuitElement,
     RawString,
@@ -111,12 +112,13 @@ class SchematicToSExprTransform:
         for comp in sheet_components:
             source = source_components.get(comp.source_component_id)
             symbol = None
-            if source and source.symbol_id:
+            symbol_id = get_effective_symbol_id(source) if source else None
+            if symbol_id:
                 from circuitweaver.library.pinout import get_symbol_info
                 try:
-                    symbol = get_symbol_info(source.symbol_id)
+                    symbol = get_symbol_info(symbol_id)
                 except Exception as e:
-                    logger.warning(f"Could not load symbol info for {source.symbol_id}: {e}")
+                    logger.warning(f"Could not load symbol info for {symbol_id}: {e}")
             sch.args.append(self._transform_component(comp, source_components, lib_id_to_lib_name, symbol))
 
         # 4. Traces & Junctions
@@ -266,8 +268,8 @@ class SchematicToSExprTransform:
     def _resolve_lib_id(self, comp: SchematicComponent, source: SourceComponent | None) -> str:
         if comp.symbol_name and ":" in comp.symbol_name:
             return comp.symbol_name
-        if source and source.symbol_id:
-            return source.symbol_id
+        if source and (symbol_id := get_effective_symbol_id(source)):
+            return symbol_id
         return "Device:QuestionBlock"
 
     def _collect_symbols_recursive(
@@ -319,7 +321,8 @@ class SchematicToSExprTransform:
         lib_id = lib_id_to_lib_name.get(lib_id_orig, lib_id_orig)
 
         ref = source.name if source else "U?"
-        val = source.display_value if source and source.display_value else (source.symbol_id if source else "")
+        symbol_id = get_effective_symbol_id(source) if source else None
+        val = source.display_value if source and source.display_value else (symbol_id if source else "")
         x = self._grid_to_mm(comp.center.x)
         y = self._grid_to_mm(comp.center.y)
         ref_y = self._grid_to_mm(comp.center.y - 20)

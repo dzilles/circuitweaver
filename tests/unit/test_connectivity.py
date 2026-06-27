@@ -1,0 +1,192 @@
+"""Tests for canonical source-connectivity planning."""
+
+from pathlib import Path
+
+import pytest
+
+from circuitweaver.compiler.connectivity import build_logical_nets, build_sheet_connectivity
+from circuitweaver.compiler.engine import CompileEngine
+from circuitweaver.compiler.global_nets import GlobalNetResolver
+from circuitweaver.io.json import read_circuit
+from circuitweaver.types import (
+    SchematicHierarchicalPin,
+    SourceGroup,
+    SourceNet,
+    SourcePort,
+    SourceTrace,
+)
+
+
+@pytest.mark.parametrize(
+    ("net", "expected_label"),
+    [
+        (SourceNet(source_net_id="VCC", name="VCC", is_power=True), "VCC"),
+        (SourceNet(source_net_id="GND", name="GND", is_ground=True), "GND"),
+    ],
+)
+def test_single_port_power_or_ground_net_renders_as_global_label(net, expected_label):
+    port = SourcePort(source_port_id="P1", source_component_id="U1", name="1")
+    trace = SourceTrace(
+        source_trace_id="T1",
+        connected_source_port_ids=["P1"],
+        connected_source_net_ids=[net.source_net_id],
+    )
+
+    generated, sheet_connectivity = build_sheet_connectivity(
+        traces=[trace],
+        ports=[port],
+        nets=[net],
+        element_to_sheet={"P1": "root"},
+        element_to_group={"U1": "root"},
+        groups=[],
+        elements=[net],
+        global_resolver=GlobalNetResolver.from_elements([net]),
+    )
+
+    assert generated == []
+    assert sheet_connectivity["root"][0]["render_kind"] == "global_label"
+    assert sheet_connectivity["root"][0]["ports"] == ["P1"]
+    assert sheet_connectivity["root"][0]["label_text"] == expected_label
+
+
+def test_traces_with_same_source_net_merge_into_one_logical_net_and_connection():
+    net = SourceNet(source_net_id="N1", name="SIG")
+    ports = [
+        SourcePort(source_port_id="P1", source_component_id="U1", name="1"),
+        SourcePort(source_port_id="P2", source_component_id="U2", name="1"),
+    ]
+    traces = [
+        SourceTrace(
+            source_trace_id="T1",
+            connected_source_port_ids=["P1"],
+            connected_source_net_ids=["N1"],
+        ),
+        SourceTrace(
+            source_trace_id="T2",
+            connected_source_port_ids=["P2"],
+            connected_source_net_ids=["N1"],
+        ),
+    ]
+
+    logical_nets = build_logical_nets(
+        traces=traces,
+        ports=ports,
+        nets=[net],
+        element_to_sheet={"P1": "root", "P2": "root"},
+        element_to_group={"U1": "root", "U2": "root"},
+        global_resolver=GlobalNetResolver.from_elements([net]),
+    )
+    _, sheet_connectivity = build_sheet_connectivity(
+        traces=traces,
+        ports=ports,
+        nets=[net],
+        element_to_sheet={"P1": "root", "P2": "root"},
+        element_to_group={"U1": "root", "U2": "root"},
+        groups=[],
+        elements=[net],
+        global_resolver=GlobalNetResolver.from_elements([net]),
+    )
+
+    assert len(logical_nets) == 1
+    assert set(logical_nets[0].source_trace_ids) == {"T1", "T2"}
+    assert len(sheet_connectivity["root"]) == 1
+    assert sheet_connectivity["root"][0]["render_kind"] == "wire"
+    assert set(sheet_connectivity["root"][0]["ports"]) == {"P1", "P2"}
+
+
+def test_direct_two_port_trace_without_source_net_remains_wire_rendered():
+    ports = [
+        SourcePort(source_port_id="P1", source_component_id="U1", name="1"),
+        SourcePort(source_port_id="P2", source_component_id="U2", name="1"),
+    ]
+    trace = SourceTrace(source_trace_id="T1", connected_source_port_ids=["P1", "P2"])
+
+    _, sheet_connectivity = build_sheet_connectivity(
+        traces=[trace],
+        ports=ports,
+        nets=[],
+        element_to_sheet={"P1": "root", "P2": "root"},
+        element_to_group={"U1": "root", "U2": "root"},
+        groups=[],
+        elements=[],
+        global_resolver=GlobalNetResolver.from_elements([]),
+    )
+
+    assert sheet_connectivity["root"][0]["render_kind"] == "wire"
+
+
+def test_non_global_inter_sheet_net_creates_hierarchical_pin_plans():
+    groups = [
+        SourceGroup(source_group_id="sheet_a", is_subcircuit=True),
+        SourceGroup(source_group_id="sheet_b", is_subcircuit=True),
+    ]
+    net = SourceNet(source_net_id="N1", name="SIG")
+    ports = [
+        SourcePort(source_port_id="P1", source_component_id="U1", name="OUT"),
+        SourcePort(source_port_id="P2", source_component_id="U2", name="IN"),
+    ]
+    trace = SourceTrace(
+        source_trace_id="T1",
+        connected_source_port_ids=["P1", "P2"],
+        connected_source_net_ids=["N1"],
+    )
+
+    generated, sheet_connectivity = build_sheet_connectivity(
+        traces=[trace],
+        ports=ports,
+        nets=[net],
+        element_to_sheet={"P1": "sheet_a", "P2": "sheet_b", "sheet_a": "root", "sheet_b": "root"},
+        element_to_group={"U1": "sheet_a", "U2": "sheet_b"},
+        groups=groups,
+        elements=[*groups, net],
+        global_resolver=GlobalNetResolver.from_elements([net]),
+    )
+
+    assert {pin.schematic_box_id for pin in generated if isinstance(pin, SchematicHierarchicalPin)} == {
+        "box_sheet_a",
+        "box_sheet_b",
+    }
+    assert sheet_connectivity["sheet_a"][0]["render_kind"] == "hierarchical_label"
+    assert sheet_connectivity["sheet_b"][0]["render_kind"] == "hierarchical_label"
+
+
+def test_global_inter_sheet_net_uses_global_labels_without_hierarchical_pins():
+    groups = [
+        SourceGroup(source_group_id="sheet_a", is_subcircuit=True),
+        SourceGroup(source_group_id="sheet_b", is_subcircuit=True),
+    ]
+    net = SourceNet(source_net_id="RET", name="RET", is_global=True)
+    ports = [
+        SourcePort(source_port_id="P1", source_component_id="U1", name="RET"),
+        SourcePort(source_port_id="P2", source_component_id="U2", name="RET"),
+    ]
+    trace = SourceTrace(
+        source_trace_id="T1",
+        connected_source_port_ids=["P1", "P2"],
+        connected_source_net_ids=["RET"],
+    )
+
+    generated, sheet_connectivity = build_sheet_connectivity(
+        traces=[trace],
+        ports=ports,
+        nets=[net],
+        element_to_sheet={"P1": "sheet_a", "P2": "sheet_b", "sheet_a": "root", "sheet_b": "root"},
+        element_to_group={"U1": "sheet_a", "U2": "sheet_b"},
+        groups=groups,
+        elements=[*groups, net],
+        global_resolver=GlobalNetResolver.from_elements([net]),
+    )
+
+    assert not any(isinstance(element, SchematicHierarchicalPin) for element in generated)
+    assert sheet_connectivity["sheet_a"][0]["render_kind"] == "global_label"
+    assert sheet_connectivity["sheet_b"][0]["render_kind"] == "global_label"
+
+
+def test_simple_led_example_compiles_vcc_and_gnd_labels(tmp_path):
+    elements = read_circuit(Path("examples/simple_led/circuit.json"))
+    root = CompileEngine().compile(elements, tmp_path, project_name="demo")
+    text = root.read_text(encoding="utf-8")
+
+    assert text.count("(global_label") >= 2
+    assert "VCC" in text
+    assert "GND" in text
