@@ -200,11 +200,12 @@ def test_source_to_layout_converts_legacy_dicts_at_boundary():
         "label_text": "VCC",
     }
 
-    _, registry = SourceToLayoutTransform().transform(
-        "root",
-        elements,
-        sheet_connectivity={"root": [legacy_connection]},
-    )
+    with pytest.warns(DeprecationWarning, match="SheetConnection"):
+        _, registry = SourceToLayoutTransform().transform(
+            "root",
+            elements,
+            sheet_connectivity={"root": [legacy_connection]},
+        )
 
     labels = [
         element

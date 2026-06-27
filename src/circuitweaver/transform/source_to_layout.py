@@ -5,6 +5,7 @@ that can be processed by the ELK layout engine.
 """
 
 import logging
+import warnings
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -27,6 +28,8 @@ from circuitweaver.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+LegacyConnectionDict = dict[str, Any]
 
 
 # =============================================================================
@@ -126,7 +129,7 @@ class SourceToLayoutTransform:
         self,
         sheet_id: str,
         elements: list[CircuitElement],
-        sheet_connectivity: dict[str, list[SheetConnection | dict[str, Any]]] | None = None,
+        sheet_connectivity: dict[str, list[SheetConnection | LegacyConnectionDict]] | None = None,
     ) -> tuple[LayoutNode, LayoutRegistry]:
         """Transform source elements into a LayoutNode graph."""
         registry = LayoutRegistry()
@@ -171,17 +174,27 @@ class SourceToLayoutTransform:
 
     @staticmethod
     def _normalize_sheet_connectivity(
-        sheet_connectivity: dict[str, list[SheetConnection | dict[str, Any]]],
+        sheet_connectivity: dict[str, list[SheetConnection | LegacyConnectionDict]],
     ) -> dict[str, list[SheetConnection]]:
         """Convert legacy dictionaries at the boundary; layout consumes typed plans."""
         normalized: dict[str, list[SheetConnection]] = {}
         for sheet_id, connections in sheet_connectivity.items():
-            normalized[sheet_id] = [
-                conn
-                if isinstance(conn, SheetConnection)
-                else SourceToLayoutTransform._legacy_connection(sheet_id, conn)
-                for conn in connections
-            ]
+            sheet_connections: list[SheetConnection] = []
+            for conn in connections:
+                if isinstance(conn, SheetConnection):
+                    sheet_connections.append(conn)
+                    continue
+
+                warnings.warn(
+                    "Passing connectivity dictionaries to SourceToLayoutTransform "
+                    "is deprecated; pass SheetConnection objects instead.",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+                sheet_connections.append(
+                    SourceToLayoutTransform._legacy_connection(sheet_id, conn)
+                )
+            normalized[sheet_id] = sheet_connections
         return normalized
 
     @staticmethod

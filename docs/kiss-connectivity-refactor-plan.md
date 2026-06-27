@@ -77,6 +77,7 @@ Completed typed-test cleanup:
 
 - Layout and transform tests now use `SheetConnection` fixtures for normal connectivity behavior.
 - Legacy connectivity dictionaries remain covered only by explicit compatibility tests and `_process_connectivity()` wrapper assertions.
+- `SourceToLayoutTransform` still accepts legacy connectivity dictionaries for external callers, but emits a deprecation warning.
 
 Completed dead-code cleanup:
 
@@ -489,12 +490,12 @@ Acceptance:
 
 ## Suggested Next Work Item
 
-Phase 7 documentation cleanup, the typed compiler-to-layout handoff, nested hierarchy hardening, and typed test cleanup are now started. Continue by deciding whether the legacy layout-boundary adapter is still part of the public compatibility surface.
+Phase 7 documentation cleanup, the typed compiler-to-layout handoff, nested hierarchy hardening, typed test cleanup, and legacy adapter deprecation are now started. Continue by removing deprecated connectivity dictionary support once external callers have had a migration window.
 
 Near-term technical cleanup:
 
-- Decide whether to keep or remove `SourceToLayoutTransform` legacy dictionary normalization for external callers.
-- If it stays, document it as compatibility-only and keep exactly one focused test.
+- Keep exactly one focused test for deprecated `SourceToLayoutTransform` dictionary normalization until the adapter is removed.
+- Remove the adapter in a future breaking cleanup after callers migrate to `SheetConnection`.
 - Consider a small public/internal API note that `SheetConnection.endpoint_port_ids` may contain generated hierarchical pin IDs for bridge labels.
 
 ## Historical First Work Item
