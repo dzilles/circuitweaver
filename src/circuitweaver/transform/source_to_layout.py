@@ -243,18 +243,22 @@ class SourceToLayoutTransform:
         # Sort groups by parent dependency to build bottom-up if needed,
         # but here we'll just find parents recursively.
         processed: set[str] = set()
+        visiting: set[str] = set()
+        group_by_id = {group.source_group_id: group for group in groups}
 
         def ensure_group_node(group: SourceGroup) -> LayoutNode:
             if group.source_group_id in processed:
                 return ctx.node_map[f"box_{group.source_group_id}"]
+            if group.source_group_id in visiting:
+                return ctx.root_node
+
+            visiting.add(group.source_group_id)
 
             # Determine parent node
             parent_node = ctx.root_node
             if group.parent_source_group_id:
-                parent_group = next(
-                    (g for g in groups if g.source_group_id == group.parent_source_group_id), None
-                )
-                if parent_group:
+                parent_group = group_by_id.get(group.parent_source_group_id)
+                if parent_group and parent_group.source_group_id not in visiting:
                     parent_node = ensure_group_node(parent_group)
 
             # Create the node
@@ -277,6 +281,7 @@ class SourceToLayoutTransform:
             ctx.node_map[box_id] = node
             ctx.registry.register_node(group, box_id)
             processed.add(group.source_group_id)
+            visiting.remove(group.source_group_id)
             return node
 
         for g in groups:

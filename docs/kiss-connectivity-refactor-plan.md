@@ -65,6 +65,7 @@ Completed hierarchy/cycle hardening:
 - Endpoint sheets at the common connection sheet use matching local labels instead of unnecessary hierarchical labels.
 - Group parent cycles are reported by validation.
 - Compiler sheet mapping and hierarchical parent walking now fall back deterministically instead of hanging on cyclic mappings.
+- Direct source-to-layout group hierarchy building also falls back deterministically on cyclic parent mappings.
 
 Completed nested-branch bridge hardening:
 

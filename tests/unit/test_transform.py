@@ -837,6 +837,21 @@ class TestTransformHierarchy:
         assert inner_box is not None
         assert inner_box.find_node("R1") is not None
 
+    def test_cyclic_group_parent_falls_back_to_root(self):
+        """Invalid parent cycles should not recurse forever in direct transform use."""
+        transform = SourceToLayoutTransform()
+        elements = [
+            SourceGroup(
+                source_group_id="loop",
+                is_subcircuit=False,
+                parent_source_group_id="loop",
+            ),
+        ]
+
+        layout, _ = transform.transform("root", elements)
+
+        assert [child.id for child in layout.children] == ["box_loop"]
+
     def test_subgroup_is_not_hierarchical_sheet(self):
         """Test that a subgroup (is_subcircuit=False) results in a non-hierarchical SchematicBox."""
         # 1. Source → Layout
