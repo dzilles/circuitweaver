@@ -1,8 +1,8 @@
 """Canonical source-connectivity planning.
 
 This module keeps electrical net decisions in one place.  It intentionally
-returns the legacy sheet-connectivity dictionaries for the current layout
-pipeline, but the decisions are derived from typed, testable dataclasses first.
+builds typed, testable render plans first. Legacy sheet-connectivity
+dictionaries are available only through the compatibility wrapper.
 """
 
 from __future__ import annotations

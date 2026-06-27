@@ -84,8 +84,8 @@ Current compile flow:
 
 1. `CompileEngine.layout()` splits source elements by type.
 2. `_map_elements()` assigns components, groups, and ports to sheets.
-3. `_process_connectivity()` computes partial per-sheet connection dictionaries and creates some hierarchical schematic elements.
-4. `SourceToLayoutTransform` builds ELK nodes and decides whether each connection becomes wires or labels.
+3. `build_connection_plan()` computes typed per-sheet render plans and generated hierarchy elements.
+4. `SourceToLayoutTransform` builds ELK nodes from `SheetConnection.render_kind`.
 5. `AutoRouter` runs ELK through Node.js.
 6. `LayoutToSchematicTransform` converts routed ELK nodes/edges into `schematic_*` elements.
 7. `SchematicToSExprTransform` writes KiCad S-expressions.
@@ -339,22 +339,28 @@ Acceptance:
 
 Status: mostly completed. `SheetConnection` and explicit `render_kind` values drive the main layout path. A compatibility adapter still accepts legacy dictionaries at the layout boundary. Nested child-to-parent nets now use the lowest common sheet as the connection point, and nested branch-to-branch nets create intermediate bridge label plans.
 
-Add a second pure function:
+The current implementation exposes this pure function:
 
 ```python
-def build_sheet_connection_plan(
-    logical_nets: list[LogicalNet],
+def build_connection_plan(
     *,
-    sheet_parent: dict[str, str],
-) -> ConnectivityPlan:
+    traces: list[SourceTrace],
+    ports: list[SourcePort],
+    nets: list[SourceNet],
+    element_to_sheet: dict[str, str],
+    element_to_group: dict[str, str],
+    groups: list[SourceGroup],
+    elements: list[CircuitElement],
+    global_resolver: GlobalNetResolver,
+) -> tuple[list[CircuitElement], dict[str, list[SheetConnection]]]:
     ...
 ```
 
 The plan should include:
 
 - Per-sheet `SheetConnection` records.
-- Hierarchical pin records to generate as schematic elements.
-- Root-page label records for hierarchical pins.
+- Generated hierarchical pins and matching net labels as schematic elements.
+- Bridge `SheetConnection` records for intermediate nested sheets.
 
 Keep policy simple:
 
@@ -368,7 +374,7 @@ Keep policy simple:
 Acceptance:
 
 - The render policy is unit-tested without ELK, KiCad, or file I/O.
-- No render decision depends on raw `dict[str, Any]`.
+- Normal render decisions no longer depend on raw `dict[str, Any]`; legacy dictionaries are only compatibility input at the layout boundary and compatibility output from `_process_connectivity()`.
 
 ### Phase 4: Migrate layout to consume the render plan
 
