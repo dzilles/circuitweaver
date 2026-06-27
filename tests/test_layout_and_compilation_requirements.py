@@ -567,6 +567,34 @@ def test_cmp_060_root_labels_generated_for_every_non_global_sheet_pin():
     assert len([e for e in generated if isinstance(e, SchematicNetLabel) and e.sheet_id == "root"]) == 3
 
 
+def test_cmp_062_nested_branch_to_branch_net_compiles_bridge_hierarchical_labels(tmp_path):
+    elements = [
+        SourceGroup(source_group_id="parent_left", name="Parent Left", is_subcircuit=True),
+        SourceGroup(source_group_id="child_left", name="Child Left", parent_source_group_id="parent_left", is_subcircuit=True),
+        SourceGroup(source_group_id="parent_right", name="Parent Right", is_subcircuit=True),
+        SourceGroup(source_group_id="child_right", name="Child Right", parent_source_group_id="parent_right", is_subcircuit=True),
+        SourceComponent(source_component_id="U_LEFT", name="U_LEFT", subcircuit_id="child_left"),
+        SourceComponent(source_component_id="U_RIGHT", name="U_RIGHT", subcircuit_id="child_right"),
+        SourcePort(source_port_id="P_LEFT", source_component_id="U_LEFT", name="OUT", pin_number=1),
+        SourcePort(source_port_id="P_RIGHT", source_component_id="U_RIGHT", name="IN", pin_number=1),
+        SourceNet(source_net_id="N1", name="SIG"),
+        SourceTrace(source_trace_id="T1", connected_source_port_ids=["P_LEFT", "P_RIGHT"], connected_source_net_ids=["N1"]),
+    ]
+
+    root_path = _engine().compile(elements, tmp_path, project_name="nested")
+    root_text = root_path.read_text(encoding="utf-8")
+    parent_left_text = (tmp_path / "parent_left.kicad_sch").read_text(encoding="utf-8")
+    parent_right_text = (tmp_path / "parent_right.kicad_sch").read_text(encoding="utf-8")
+
+    assert "parent_left.kicad_sch" in root_text
+    assert "parent_right.kicad_sch" in root_text
+    assert "HPIN_SIG" in root_text
+    for parent_text in (parent_left_text, parent_right_text):
+        assert "(label" in parent_text
+        assert "(hierarchical_label" in parent_text
+        assert "HPIN_SIG" in parent_text
+
+
 def test_cmp_061_global_schematic_net_labels_become_kicad_global_label_expressions():
     label = SchematicNetLabel(schematic_net_label_id="L1", source_net_id="N1", text="BUS", center=Point(x=0, y=0), sheet_id="root", is_global=True)
     sexpr = _sexpr([label], {})

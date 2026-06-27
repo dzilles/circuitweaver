@@ -43,6 +43,12 @@ Status after the nested-branch bridge slice on 2026-06-27:
 458 passed
 ```
 
+Status after the nested hierarchy compile fixture on 2026-06-27:
+
+```text
+459 passed
+```
+
 Completed first-slice work:
 
 - Added `src/circuitweaver/compiler/connectivity.py` with typed logical-net and sheet-connection planning.
@@ -65,6 +71,7 @@ Completed nested-branch bridge hardening:
 - Nets crossing between two nested branches now create generated bridge connections on intermediate sheets.
 - Bridge connections reuse the typed `SheetConnection` plan and target generated hierarchical pin IDs registered as ELK ports.
 - `SourceToLayoutTransform` can create a hierarchical label from a generated sheet pin without adding a separate renderer concept.
+- A deterministic compile regression now verifies nested branch-to-branch nets in generated KiCad sheet files.
 
 ## Current Architecture Summary
 
@@ -468,13 +475,13 @@ Acceptance:
 
 ## Suggested Next Work Item
 
-Phase 7 documentation cleanup, the typed compiler-to-layout handoff, and nested hierarchy hardening are now started. Continue by shrinking remaining compatibility-only dictionary usage and adding an end-to-end nested hierarchy compile fixture.
+Phase 7 documentation cleanup, the typed compiler-to-layout handoff, and nested hierarchy hardening are now started. Continue by shrinking remaining compatibility-only dictionary usage.
 
 Near-term technical cleanup:
 
 - Remove or isolate remaining legacy connectivity dictionary tests over time.
 - Move legacy connectivity adapters out of `SourceToLayoutTransform` once external callers no longer need them.
-- Add a small system-level compile fixture for nested branch-to-branch nets so KiCad output is covered beyond the pure planner/layout unit tests.
+- Consider a small public/internal API note that `SheetConnection.endpoint_port_ids` may contain generated hierarchical pin IDs for bridge labels.
 
 ## Historical First Work Item
 
