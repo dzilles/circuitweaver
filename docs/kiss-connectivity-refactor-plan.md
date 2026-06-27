@@ -78,6 +78,10 @@ Completed typed-test cleanup:
 - Layout and transform tests now use `SheetConnection` fixtures for normal connectivity behavior.
 - Legacy connectivity dictionaries remain covered only by explicit compatibility tests and `_process_connectivity()` wrapper assertions.
 
+Completed dead-code cleanup:
+
+- Removed the unused duplicate `compiler/elk_runner.py`; `AutoRouter` is the active ELK subprocess wrapper.
+
 ## Current Architecture Summary
 
 Current compile flow:
@@ -459,7 +463,6 @@ Acceptance:
 
 After the connectivity path is stable:
 
-- Remove or deprecate duplicate `compiler/elk_runner.py` if unused.
 - Reconcile `PLAN.md`, `docs/requirements/target-architecture.md`, and `docs/requirements/implementation-notes-and-gaps.md` so they no longer contradict each other.
 - Decide whether `PLAN.md` should be archived, replaced, or renamed as historical context.
 - Update `docs/circuit-json-spec.md` to state clearly that user-authored JSON should normally be `source_*` only, while generated schematic JSON is internal/debug output.
