@@ -248,6 +248,52 @@ def test_non_global_inter_sheet_net_creates_hierarchical_pin_plans():
     assert sheet_connectivity["sheet_b"][0]["render_kind"] == "hierarchical_label"
 
 
+def test_nested_child_to_parent_net_stops_at_parent_sheet():
+    groups = [
+        SourceGroup(source_group_id="parent", is_subcircuit=True),
+        SourceGroup(
+            source_group_id="child",
+            parent_source_group_id="parent",
+            is_subcircuit=True,
+        ),
+    ]
+    net = SourceNet(source_net_id="N1", name="SIG")
+    ports = [
+        SourcePort(source_port_id="P_CHILD", source_component_id="U_CHILD", name="OUT"),
+        SourcePort(source_port_id="P_PARENT", source_component_id="U_PARENT", name="IN"),
+    ]
+    trace = SourceTrace(
+        source_trace_id="T1",
+        connected_source_port_ids=["P_CHILD", "P_PARENT"],
+        connected_source_net_ids=["N1"],
+    )
+
+    generated, sheet_connectivity = build_connection_plan(
+        traces=[trace],
+        ports=ports,
+        nets=[net],
+        element_to_sheet={
+            "P_CHILD": "child",
+            "P_PARENT": "parent",
+            "parent": "root",
+            "child": "parent",
+        },
+        element_to_group={"U_CHILD": "child", "U_PARENT": "parent"},
+        groups=groups,
+        elements=[*groups, net],
+        global_resolver=GlobalNetResolver.from_elements([net]),
+    )
+
+    hpins = [element for element in generated if isinstance(element, SchematicHierarchicalPin)]
+    labels = [element for element in generated if isinstance(element, SchematicNetLabel)]
+
+    assert [(pin.schematic_box_id, pin.sheet_id) for pin in hpins] == [("box_child", "parent")]
+    assert {label.sheet_id for label in labels} == {"parent"}
+    assert sheet_connectivity["child"][0].render_kind == "hierarchical_label"
+    assert sheet_connectivity["parent"][0].render_kind == "local_label"
+    assert sheet_connectivity["parent"][0].label_text == "HPIN_SIG"
+
+
 def test_global_inter_sheet_net_uses_global_labels_without_hierarchical_pins():
     groups = [
         SourceGroup(source_group_id="sheet_a", is_subcircuit=True),

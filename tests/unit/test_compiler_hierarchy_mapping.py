@@ -66,6 +66,23 @@ def test_explicit_subcircuit_id_remains_the_owned_sheet_id():
     assert element_to_sheet["controller_group"] == "root"
 
 
+def test_cyclic_group_parent_mapping_falls_back_to_root():
+    engine = CompileEngine()
+    group = SourceGroup(
+        source_group_id="controller_group",
+        is_subcircuit=True,
+        parent_source_group_id="controller_group",
+    )
+
+    element_to_sheet, _ = engine._map_elements(
+        components=[],
+        groups=[group],
+        ports=[],
+    )
+
+    assert element_to_sheet["controller_group"] == "root"
+
+
 def test_non_global_inter_sheet_net_generates_root_labels_for_hierarchical_pins():
     engine = CompileEngine()
     elements = [

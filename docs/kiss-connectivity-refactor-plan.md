@@ -31,6 +31,12 @@ Status after the first implementation slice on 2026-06-27:
 450 passed
 ```
 
+Status after the hierarchy/cycle hardening slice on 2026-06-27:
+
+```text
+453 passed
+```
+
 Completed first-slice work:
 
 - Added `src/circuitweaver/compiler/connectivity.py` with typed logical-net and sheet-connection planning.
@@ -40,6 +46,13 @@ Completed first-slice work:
 - Fixed KiCad symbol resolution to use `ftype` inference when `symbol_id` is absent.
 - Added in-memory validation through `validate_circuit_elements()`.
 - Added regression tests for connectivity, KiCad symbol resolution, and in-memory validation.
+
+Completed hierarchy/cycle hardening:
+
+- Non-global nested child-to-parent nets now stop at the lowest common sheet instead of always propagating to `root`.
+- Endpoint sheets at the common connection sheet use matching local labels instead of unnecessary hierarchical labels.
+- Group parent cycles are reported by validation.
+- Compiler sheet mapping and hierarchical parent walking now fall back deterministically instead of hanging on cyclic mappings.
 
 ## Current Architecture Summary
 
@@ -300,7 +313,7 @@ Acceptance:
 
 ### Phase 3: Build a typed render plan
 
-Status: mostly completed. `SheetConnection` and explicit `render_kind` values drive the main layout path. A compatibility adapter still accepts legacy dictionaries at the layout boundary.
+Status: mostly completed. `SheetConnection` and explicit `render_kind` values drive the main layout path. A compatibility adapter still accepts legacy dictionaries at the layout boundary. Nested child-to-parent nets now use the lowest common sheet as the connection point.
 
 Add a second pure function:
 
@@ -443,13 +456,13 @@ Acceptance:
 
 ## Suggested Next Work Item
 
-Phase 7 documentation cleanup and the typed compiler-to-layout handoff are now started. Continue by shrinking remaining compatibility-only dictionary usage and hardening nested hierarchy behavior.
+Phase 7 documentation cleanup, the typed compiler-to-layout handoff, and basic nested hierarchy hardening are now started. Continue by shrinking remaining compatibility-only dictionary usage and covering deeper nested branch propagation.
 
 Near-term technical cleanup:
 
 - Remove or isolate remaining legacy connectivity dictionary tests over time.
 - Move legacy connectivity adapters out of `SourceToLayoutTransform` once external callers no longer need them.
-- Add tests around generated hierarchical elements for nested subcircuits before changing that path further.
+- Add tests for nets crossing between two nested branches, where intermediate sheets may need generated hierarchical labels as well as parent-sheet pins.
 
 ## Historical First Work Item
 

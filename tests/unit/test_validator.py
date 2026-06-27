@@ -311,3 +311,17 @@ class TestSourceGroup:
 
         assert not result.is_valid
         assert any("non-existent" in str(e) for e in result.errors)
+
+    def test_parent_group_cycle_is_invalid(self, tmp_path: Path):
+        """Test that parent_source_group_id cycles are caught."""
+        circuit = [
+            {"type": "source_group", "source_group_id": "group_1", "parent_source_group_id": "group_2"},
+            {"type": "source_group", "source_group_id": "group_2", "parent_source_group_id": "group_1"},
+        ]
+        file_path = tmp_path / "cycle.json"
+        file_path.write_text(json.dumps(circuit))
+
+        result = validate_circuit_file(file_path)
+
+        assert not result.is_valid
+        assert any("contains cycle" in str(e) for e in result.errors)

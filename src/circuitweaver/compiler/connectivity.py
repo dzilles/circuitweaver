@@ -152,10 +152,17 @@ def build_connection_plan(
         hierarchical_pin_by_sheet: dict[str, str] = {}
         hierarchical_text = f"HPIN_{logical_net.display_name}"
 
+        connection_sheet = (
+            _lowest_common_sheet(involved_sheets, sheet_to_parent)
+            if is_inter_sheet
+            else involved_sheets[0]
+        )
+
         if is_inter_sheet and not logical_net.is_global:
             hierarchical_pin_by_sheet = _build_hierarchical_elements(
                 logical_net=logical_net,
                 involved_sheets=involved_sheets,
+                connection_sheet=connection_sheet,
                 hierarchical_text=hierarchical_text,
                 sheet_to_group=sheet_to_group,
                 sheet_to_parent=sheet_to_parent,
@@ -174,10 +181,13 @@ def build_connection_plan(
                 endpoint_count=len(endpoints),
                 is_inter_sheet=is_inter_sheet,
                 is_inter_group=is_inter_group,
+                is_connection_sheet=sheet_id == connection_sheet,
             )
             label_text = (
                 logical_net.display_name
                 if render_kind == "global_label"
+                else hierarchical_text
+                if is_inter_sheet
                 else f"NET_{logical_net.display_name}"
             )
             connection = SheetConnection(
@@ -232,11 +242,12 @@ def _render_kind_for_sheet(
     endpoint_count: int,
     is_inter_sheet: bool,
     is_inter_group: bool,
+    is_connection_sheet: bool,
 ) -> RenderKind:
     if logical_net.is_global:
         return "global_label"
     if is_inter_sheet:
-        return "hierarchical_label"
+        return "local_label" if is_connection_sheet else "hierarchical_label"
     if is_inter_group:
         return "local_label"
     if endpoint_count < 2 and logical_net.source_net_id is not None:
@@ -248,6 +259,7 @@ def _build_hierarchical_elements(
     *,
     logical_net: LogicalNet,
     involved_sheets: list[str],
+    connection_sheet: str,
     hierarchical_text: str,
     sheet_to_group: dict[str, str],
     sheet_to_parent: dict[str, str],
@@ -257,12 +269,17 @@ def _build_hierarchical_elements(
     hierarchical_pin_by_sheet: dict[str, str] = {}
 
     for sheet_id in involved_sheets:
-        if sheet_id == "root":
+        if sheet_id == connection_sheet:
             continue
 
         current_sheet = sheet_id
-        while current_sheet != "root":
-            parent_sheet = sheet_to_parent.get(current_sheet, "root")
+        visited: set[str] = set()
+        while current_sheet != connection_sheet:
+            if current_sheet in visited:
+                break
+            visited.add(current_sheet)
+
+            parent_sheet = _safe_parent_sheet(current_sheet, sheet_to_parent, visited)
             hpin_id = f"hpin_{logical_net.net_id}_{current_sheet}"
             if not _has_hierarchical_pin(elements + generated, hpin_id):
                 generated.append(
@@ -287,9 +304,76 @@ def _build_hierarchical_elements(
                 )
             hierarchical_pin_by_sheet[current_sheet] = hpin_id
             hierarchical_pin_by_sheet[parent_sheet] = hpin_id
+            if parent_sheet == "root" and connection_sheet != "root":
+                break
             current_sheet = parent_sheet
 
     return hierarchical_pin_by_sheet
+
+
+def _lowest_common_sheet(
+    involved_sheets: list[str],
+    sheet_to_parent: dict[str, str],
+) -> str:
+    if not involved_sheets:
+        return "root"
+
+    paths: list[tuple[str, ...]] = []
+    for sheet_id in involved_sheets:
+        path, has_cycle = _sheet_path_to_root(sheet_id, sheet_to_parent)
+        if has_cycle:
+            return "root"
+        paths.append(path)
+
+    common = set(paths[0])
+    for path in paths[1:]:
+        common.intersection_update(path)
+
+    for sheet_id in paths[0]:
+        if sheet_id in common:
+            return sheet_id
+    return "root"
+
+
+def _sheet_path_to_root(
+    sheet_id: str,
+    sheet_to_parent: dict[str, str],
+) -> tuple[tuple[str, ...], bool]:
+    path: list[str] = []
+    visited: set[str] = set()
+    current_sheet = sheet_id
+    has_cycle = False
+
+    while True:
+        if current_sheet in visited:
+            has_cycle = True
+            break
+
+        path.append(current_sheet)
+        if current_sheet == "root":
+            break
+
+        visited.add(current_sheet)
+        parent_sheet = sheet_to_parent.get(current_sheet, "root")
+        if parent_sheet == current_sheet:
+            has_cycle = True
+            break
+        current_sheet = parent_sheet
+
+    if path[-1] != "root":
+        path.append("root")
+    return tuple(path), has_cycle
+
+
+def _safe_parent_sheet(
+    current_sheet: str,
+    sheet_to_parent: dict[str, str],
+    visited: set[str],
+) -> str:
+    parent_sheet = sheet_to_parent.get(current_sheet, "root")
+    if parent_sheet == current_sheet or parent_sheet in visited:
+        return "root"
+    return parent_sheet
 
 
 def _sheet_to_group_id(groups: list[SourceGroup]) -> dict[str, str]:

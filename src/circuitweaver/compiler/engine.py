@@ -523,14 +523,18 @@ class CompileEngine:
             if g.is_subcircuit and (sheet_id := self._get_group_sheet_id(g))
         }
 
-        def get_owner_sheet(gid: str | None) -> str:
+        def get_owner_sheet(gid: str | None, visited: set[str] | None = None) -> str:
             """Recursively find the subcircuit_id that owns this group."""
             if not gid or gid not in group_map:
                 return "root"
+            visited = visited or set()
+            if gid in visited:
+                return "root"
+            visited.add(gid)
             g = group_map[gid]
             if g.is_subcircuit:
                 return self._get_group_sheet_id(g)
-            return get_owner_sheet(g.parent_source_group_id)
+            return get_owner_sheet(g.parent_source_group_id, visited)
 
         for c in components:
             pid = c.source_group_id or c.subcircuit_id
@@ -550,7 +554,7 @@ class CompileEngine:
 
         for g in groups:
             # A group's owner sheet is determined by its parent
-            sheet = get_owner_sheet(g.parent_source_group_id)
+            sheet = get_owner_sheet(g.parent_source_group_id, {g.source_group_id})
             element_to_sheet[g.source_group_id] = sheet
             element_to_group[g.source_group_id] = g.parent_source_group_id or sheet
 

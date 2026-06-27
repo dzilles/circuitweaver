@@ -122,4 +122,35 @@ class SourceReferencesRule(ValidationRule):
                     element_id=element.source_group_id,
                 )
 
+        self._validate_group_parent_cycles(source_groups, result)
         return result
+
+    def _validate_group_parent_cycles(
+        self,
+        source_groups: dict[str, SourceGroup],
+        result: ValidationResult,
+    ) -> None:
+        reported_cycles: set[tuple[str, ...]] = set()
+
+        for group_id in source_groups:
+            path: list[str] = []
+            seen_at: dict[str, int] = {}
+            current_id: str | None = group_id
+
+            while current_id and current_id in source_groups:
+                if current_id in seen_at:
+                    cycle = path[seen_at[current_id]:]
+                    cycle_key = tuple(sorted(cycle))
+                    if cycle_key not in reported_cycles:
+                        reported_cycles.add(cycle_key)
+                        result.add_error(
+                            self.name,
+                            "source_group parent hierarchy contains cycle: "
+                            f"{' -> '.join([*cycle, current_id])}",
+                            element_id=current_id,
+                        )
+                    break
+
+                seen_at[current_id] = len(path)
+                path.append(current_id)
+                current_id = source_groups[current_id].parent_source_group_id
