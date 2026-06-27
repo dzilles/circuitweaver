@@ -73,6 +73,11 @@ Completed nested-branch bridge hardening:
 - `SourceToLayoutTransform` can create a hierarchical label from a generated sheet pin without adding a separate renderer concept.
 - A deterministic compile regression now verifies nested branch-to-branch nets in generated KiCad sheet files.
 
+Completed typed-test cleanup:
+
+- Layout and transform tests now use `SheetConnection` fixtures for normal connectivity behavior.
+- Legacy connectivity dictionaries remain covered only by explicit compatibility tests and `_process_connectivity()` wrapper assertions.
+
 ## Current Architecture Summary
 
 Current compile flow:
@@ -475,12 +480,12 @@ Acceptance:
 
 ## Suggested Next Work Item
 
-Phase 7 documentation cleanup, the typed compiler-to-layout handoff, and nested hierarchy hardening are now started. Continue by shrinking remaining compatibility-only dictionary usage.
+Phase 7 documentation cleanup, the typed compiler-to-layout handoff, nested hierarchy hardening, and typed test cleanup are now started. Continue by deciding whether the legacy layout-boundary adapter is still part of the public compatibility surface.
 
 Near-term technical cleanup:
 
-- Remove or isolate remaining legacy connectivity dictionary tests over time.
-- Move legacy connectivity adapters out of `SourceToLayoutTransform` once external callers no longer need them.
+- Decide whether to keep or remove `SourceToLayoutTransform` legacy dictionary normalization for external callers.
+- If it stays, document it as compatibility-only and keep exactly one focused test.
 - Consider a small public/internal API note that `SheetConnection.endpoint_port_ids` may contain generated hierarchical pin IDs for bridge labels.
 
 ## Historical First Work Item

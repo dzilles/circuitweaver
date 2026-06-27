@@ -21,6 +21,7 @@ from circuitweaver.types import (
     SchematicHierarchicalPin,
     SchematicNetLabel,
     SchematicTrace,
+    SheetConnection,
     SourceComponent,
     SourceGroup,
     SourcePort,
@@ -54,7 +55,19 @@ def test_lq_003_components_order_by_input_output_connectivity():
         SourceComponent(source_component_id="LOAD", name="LOAD"),
         SourcePort(source_port_id="LOAD_IN", source_component_id="LOAD", name="IN", port_hints=["input"]),
     ]
-    sheet_conn = {"root": [{"trace_id": "T1", "ports": ["LOAD_IN", "SRC_OUT"]}]}
+    sheet_conn = {
+        "root": [
+            SheetConnection(
+                net_id="T1",
+                trace_ids=("T1",),
+                sheet_id="root",
+                endpoint_port_ids=("LOAD_IN", "SRC_OUT"),
+                render_kind="wire",
+                label_text="NET_T1",
+                hierarchical_label_text="HPIN_T1",
+            )
+        ]
+    }
     layout, _ = SourceToLayoutTransform().transform("root", elements, sheet_conn)
     assert [child.id for child in layout.children] == ["SRC", "LOAD"]
 

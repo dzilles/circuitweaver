@@ -39,6 +39,7 @@ from circuitweaver.types import (
     SchematicNoConnect,
     SchematicPort,
     SchematicTrace,
+    SheetConnection,
     SourceComponent,
     SourceGroup,
     SourceNet,
@@ -226,7 +227,19 @@ def test_lay_025_same_context_connections_become_elk_edges():
         SourceComponent(source_component_id="R2", name="R2"),
         SourcePort(source_port_id="R2_1", source_component_id="R2", name="1", pin_number=1),
     ]
-    sheet_conn = {"root": [{"trace_id": "T1", "ports": ["R1_1", "R2_1"], "is_inter_group": False, "is_inter_sheet": False, "is_global_net": False}]}
+    sheet_conn = {
+        "root": [
+            SheetConnection(
+                net_id="T1",
+                trace_ids=("T1",),
+                sheet_id="root",
+                endpoint_port_ids=("R1_1", "R2_1"),
+                render_kind="wire",
+                label_text="NET_T1",
+                hierarchical_label_text="HPIN_T1",
+            )
+        ]
+    }
     layout, _ = SourceToLayoutTransform().transform("root", elements, sheet_conn)
     assert layout.edges[0].id == "e_T1_R2_1"
     assert layout.edges[0].sources == ["R1:1"]
@@ -242,7 +255,20 @@ def test_lay_026_cross_context_connections_become_label_nodes_and_edges():
         SourceComponent(source_component_id="R2", name="R2", source_group_id="G2"),
         SourcePort(source_port_id="R2_1", source_component_id="R2", name="1", pin_number=1),
     ]
-    sheet_conn = {"root": [{"trace_id": "T1", "ports": ["R1_1", "R2_1"], "is_inter_group": True, "is_inter_sheet": False, "is_global_net": False, "label_text": "NET_T1"}]}
+    sheet_conn = {
+        "root": [
+            SheetConnection(
+                net_id="T1",
+                trace_ids=("T1",),
+                sheet_id="root",
+                endpoint_port_ids=("R1_1", "R2_1"),
+                render_kind="local_label",
+                label_text="NET_T1",
+                hierarchical_label_text="HPIN_T1",
+                is_inter_group=True,
+            )
+        ]
+    }
     layout, registry = SourceToLayoutTransform().transform("root", elements, sheet_conn)
     assert any(child.id.startswith("label_node_") for box in layout.children for child in box.children)
     assert any(edge.id.startswith("e_label_") for edge in _all_edges(layout))

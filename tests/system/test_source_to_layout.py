@@ -13,6 +13,7 @@ from circuitweaver.types import (
     SchematicHierarchicalPin,
     SchematicNetLabel,
     SchematicNoConnect,
+    SheetConnection,
     SourceComponent,
     SourceGroup,
     SourceNet,
@@ -458,11 +459,15 @@ class TestConnectivity:
 
         sheet_connectivity = {
             "root": [
-                {
-                    "trace_id": "trace_1",
-                    "ports": ["R1_2", "R2_1"],
-                    "is_inter_group": False,
-                }
+                SheetConnection(
+                    net_id="trace_1",
+                    trace_ids=("trace_1",),
+                    sheet_id="root",
+                    endpoint_port_ids=("R1_2", "R2_1"),
+                    render_kind="wire",
+                    label_text="NET_trace_1",
+                    hierarchical_label_text="HPIN_trace_1",
+                )
             ]
         }
 
@@ -796,7 +801,15 @@ class TestEdgeCases:
 
         sheet_connectivity = {
             "other_sheet": [
-                {"trace_id": "t1", "ports": ["R1_1", "R1_2"], "is_inter_group": False}
+                SheetConnection(
+                    net_id="t1",
+                    trace_ids=("t1",),
+                    sheet_id="other_sheet",
+                    endpoint_port_ids=("R1_1", "R1_2"),
+                    render_kind="wire",
+                    label_text="NET_t1",
+                    hierarchical_label_text="HPIN_t1",
+                )
             ]
         }
 

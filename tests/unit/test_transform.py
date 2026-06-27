@@ -29,6 +29,7 @@ from circuitweaver.types import (
     SchematicText,
     SchematicTrace,
     SchematicTraceEdge,
+    SheetConnection,
     SourceComponent,
     SourceGroup,
     SourcePort,
@@ -722,15 +723,17 @@ class TestTransformHierarchy:
             SourcePort(source_port_id="p_r2_1", source_component_id="R2", name="1", pin_number=1),
         ]
 
-        # Connection between R1 and R2 (both in g1)
         connectivity = {
             "root": [
-                {
-                    "trace_id": "t1",
-                    "ports": ["p_r1_1", "p_r2_1"],
-                    "is_inter_group": False,
-                    "is_inter_sheet": False,
-                }
+                SheetConnection(
+                    net_id="t1",
+                    trace_ids=("t1",),
+                    sheet_id="root",
+                    endpoint_port_ids=("p_r1_1", "p_r2_1"),
+                    render_kind="wire",
+                    label_text="NET_t1",
+                    hierarchical_label_text="HPIN_t1",
+                )
             ]
         }
 
@@ -752,15 +755,18 @@ class TestTransformHierarchy:
             SourcePort(source_port_id="p_r2_1", source_component_id="R2", name="1", pin_number=1),
         ]
 
-        # Connection between R1 (g1) and R2 (g2)
         connectivity = {
             "root": [
-                {
-                    "trace_id": "t1",
-                    "ports": ["p_r1_1", "p_r2_1"],
-                    "is_inter_group": True,
-                    "is_inter_sheet": False,
-                }
+                SheetConnection(
+                    net_id="t1",
+                    trace_ids=("t1",),
+                    sheet_id="root",
+                    endpoint_port_ids=("p_r1_1", "p_r2_1"),
+                    render_kind="local_label",
+                    label_text="NET_t1",
+                    hierarchical_label_text="HPIN_t1",
+                    is_inter_group=True,
+                )
             ]
         }
 
