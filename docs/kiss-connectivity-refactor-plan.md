@@ -34,7 +34,13 @@ Status after the first implementation slice on 2026-06-27:
 Status after the hierarchy/cycle hardening slice on 2026-06-27:
 
 ```text
-453 passed
+456 passed
+```
+
+Status after the nested-branch bridge slice on 2026-06-27:
+
+```text
+458 passed
 ```
 
 Completed first-slice work:
@@ -53,6 +59,12 @@ Completed hierarchy/cycle hardening:
 - Endpoint sheets at the common connection sheet use matching local labels instead of unnecessary hierarchical labels.
 - Group parent cycles are reported by validation.
 - Compiler sheet mapping and hierarchical parent walking now fall back deterministically instead of hanging on cyclic mappings.
+
+Completed nested-branch bridge hardening:
+
+- Nets crossing between two nested branches now create generated bridge connections on intermediate sheets.
+- Bridge connections reuse the typed `SheetConnection` plan and target generated hierarchical pin IDs registered as ELK ports.
+- `SourceToLayoutTransform` can create a hierarchical label from a generated sheet pin without adding a separate renderer concept.
 
 ## Current Architecture Summary
 
@@ -313,7 +325,7 @@ Acceptance:
 
 ### Phase 3: Build a typed render plan
 
-Status: mostly completed. `SheetConnection` and explicit `render_kind` values drive the main layout path. A compatibility adapter still accepts legacy dictionaries at the layout boundary. Nested child-to-parent nets now use the lowest common sheet as the connection point.
+Status: mostly completed. `SheetConnection` and explicit `render_kind` values drive the main layout path. A compatibility adapter still accepts legacy dictionaries at the layout boundary. Nested child-to-parent nets now use the lowest common sheet as the connection point, and nested branch-to-branch nets create intermediate bridge label plans.
 
 Add a second pure function:
 
@@ -456,13 +468,13 @@ Acceptance:
 
 ## Suggested Next Work Item
 
-Phase 7 documentation cleanup, the typed compiler-to-layout handoff, and basic nested hierarchy hardening are now started. Continue by shrinking remaining compatibility-only dictionary usage and covering deeper nested branch propagation.
+Phase 7 documentation cleanup, the typed compiler-to-layout handoff, and nested hierarchy hardening are now started. Continue by shrinking remaining compatibility-only dictionary usage and adding an end-to-end nested hierarchy compile fixture.
 
 Near-term technical cleanup:
 
 - Remove or isolate remaining legacy connectivity dictionary tests over time.
 - Move legacy connectivity adapters out of `SourceToLayoutTransform` once external callers no longer need them.
-- Add tests for nets crossing between two nested branches, where intermediate sheets may need generated hierarchical labels as well as parent-sheet pins.
+- Add a small system-level compile fixture for nested branch-to-branch nets so KiCad output is covered beyond the pure planner/layout unit tests.
 
 ## Historical First Work Item
 

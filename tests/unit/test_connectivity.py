@@ -14,6 +14,8 @@ from circuitweaver.compiler.global_nets import GlobalNetResolver
 from circuitweaver.io.json import read_circuit
 from circuitweaver.transform.source_to_layout import SourceToLayoutTransform
 from circuitweaver.types import (
+    Point,
+    SchematicHierarchicalLabel,
     SchematicHierarchicalPin,
     SchematicNetLabel,
     SheetConnection,
@@ -292,6 +294,103 @@ def test_nested_child_to_parent_net_stops_at_parent_sheet():
     assert sheet_connectivity["child"][0].render_kind == "hierarchical_label"
     assert sheet_connectivity["parent"][0].render_kind == "local_label"
     assert sheet_connectivity["parent"][0].label_text == "HPIN_SIG"
+
+
+def test_nested_branch_to_branch_net_creates_intermediate_bridge_connections():
+    groups = [
+        SourceGroup(source_group_id="parent_left", is_subcircuit=True),
+        SourceGroup(
+            source_group_id="child_left",
+            parent_source_group_id="parent_left",
+            is_subcircuit=True,
+        ),
+        SourceGroup(source_group_id="parent_right", is_subcircuit=True),
+        SourceGroup(
+            source_group_id="child_right",
+            parent_source_group_id="parent_right",
+            is_subcircuit=True,
+        ),
+    ]
+    net = SourceNet(source_net_id="N1", name="SIG")
+    ports = [
+        SourcePort(source_port_id="P_LEFT", source_component_id="U_LEFT", name="OUT"),
+        SourcePort(source_port_id="P_RIGHT", source_component_id="U_RIGHT", name="IN"),
+    ]
+    trace = SourceTrace(
+        source_trace_id="T1",
+        connected_source_port_ids=["P_LEFT", "P_RIGHT"],
+        connected_source_net_ids=["N1"],
+    )
+
+    generated, sheet_connectivity = build_connection_plan(
+        traces=[trace],
+        ports=ports,
+        nets=[net],
+        element_to_sheet={
+            "P_LEFT": "child_left",
+            "P_RIGHT": "child_right",
+            "parent_left": "root",
+            "child_left": "parent_left",
+            "parent_right": "root",
+            "child_right": "parent_right",
+        },
+        element_to_group={"U_LEFT": "child_left", "U_RIGHT": "child_right"},
+        groups=groups,
+        elements=[*groups, net],
+        global_resolver=GlobalNetResolver.from_elements([net]),
+    )
+
+    hpins = [element for element in generated if isinstance(element, SchematicHierarchicalPin)]
+    assert {(pin.schematic_box_id, pin.sheet_id) for pin in hpins} == {
+        ("box_child_left", "parent_left"),
+        ("box_parent_left", "root"),
+        ("box_child_right", "parent_right"),
+        ("box_parent_right", "root"),
+    }
+    assert sheet_connectivity["parent_left"][0].endpoint_port_ids == ("hpin_N1_child_left",)
+    assert sheet_connectivity["parent_left"][0].render_kind == "hierarchical_label"
+    assert sheet_connectivity["parent_right"][0].endpoint_port_ids == ("hpin_N1_child_right",)
+    assert sheet_connectivity["parent_right"][0].render_kind == "hierarchical_label"
+
+
+def test_source_to_layout_creates_bridge_hierarchical_label_from_hierarchical_pin():
+    elements = [
+        SourceGroup(source_group_id="child", is_subcircuit=True),
+        SchematicHierarchicalPin(
+            schematic_hierarchical_pin_id="hpin_N1_child",
+            source_net_id="N1",
+            schematic_box_id="box_child",
+            sheet_id="parent",
+            center=Point(x=0, y=0),
+            text="HPIN_SIG",
+        ),
+    ]
+    bridge_connection = SheetConnection(
+        net_id="N1",
+        trace_ids=("T1",),
+        sheet_id="parent",
+        endpoint_port_ids=("hpin_N1_child",),
+        render_kind="hierarchical_label",
+        label_text="HPIN_SIG",
+        hierarchical_label_text="HPIN_SIG",
+        source_net_id="N1",
+        hierarchical_pin_id="hpin_N1_child",
+        is_inter_sheet=True,
+    )
+
+    _, registry = SourceToLayoutTransform().transform(
+        "parent",
+        elements,
+        sheet_connectivity={"parent": [bridge_connection]},
+    )
+
+    labels = [
+        element
+        for element in registry.layout_to_element.values()
+        if isinstance(element, SchematicHierarchicalLabel)
+    ]
+    assert labels[0].text == "HPIN_SIG"
+    assert labels[0].source_port_id == "hpin_N1_child"
 
 
 def test_global_inter_sheet_net_uses_global_labels_without_hierarchical_pins():

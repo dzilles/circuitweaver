@@ -10,7 +10,12 @@ RenderKind = Literal["wire", "local_label", "global_label", "hierarchical_label"
 
 @dataclass(frozen=True)
 class SheetConnection:
-    """How one logical net should be represented on one sheet."""
+    """How one logical net should be represented on one sheet.
+
+    ``endpoint_port_ids`` usually references source port IDs. For generated
+    hierarchy bridge labels it may reference a hierarchical pin ID registered
+    as an ELK port on a child sheet box.
+    """
 
     net_id: str
     trace_ids: tuple[str, ...]

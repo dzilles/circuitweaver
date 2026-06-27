@@ -159,7 +159,7 @@ def build_connection_plan(
         )
 
         if is_inter_sheet and not logical_net.is_global:
-            hierarchical_pin_by_sheet = _build_hierarchical_elements(
+            hierarchical_pin_by_sheet, bridge_connections = _build_hierarchical_elements(
                 logical_net=logical_net,
                 involved_sheets=involved_sheets,
                 connection_sheet=connection_sheet,
@@ -169,6 +169,8 @@ def build_connection_plan(
                 elements=elements,
                 generated=generated,
             )
+            for connection in bridge_connections:
+                sheet_connectivity[connection.sheet_id].append(connection)
 
         for sheet_id in involved_sheets:
             endpoints = tuple(
@@ -265,8 +267,10 @@ def _build_hierarchical_elements(
     sheet_to_parent: dict[str, str],
     elements: list[CircuitElement],
     generated: list[CircuitElement],
-) -> dict[str, str]:
+) -> tuple[dict[str, str], list[SheetConnection]]:
     hierarchical_pin_by_sheet: dict[str, str] = {}
+    bridge_connections: list[SheetConnection] = []
+    involved_sheet_set = set(involved_sheets)
 
     for sheet_id in involved_sheets:
         if sheet_id == connection_sheet:
@@ -304,11 +308,28 @@ def _build_hierarchical_elements(
                 )
             hierarchical_pin_by_sheet[current_sheet] = hpin_id
             hierarchical_pin_by_sheet[parent_sheet] = hpin_id
+
+            if parent_sheet != connection_sheet and parent_sheet not in involved_sheet_set:
+                bridge_connections.append(
+                    SheetConnection(
+                        net_id=logical_net.net_id,
+                        trace_ids=logical_net.source_trace_ids,
+                        sheet_id=parent_sheet,
+                        endpoint_port_ids=(hpin_id,),
+                        render_kind="hierarchical_label",
+                        label_text=hierarchical_text,
+                        hierarchical_label_text=hierarchical_text,
+                        source_net_id=logical_net.source_net_id,
+                        hierarchical_pin_id=hpin_id,
+                        is_inter_sheet=True,
+                    )
+                )
+
             if parent_sheet == "root" and connection_sheet != "root":
                 break
             current_sheet = parent_sheet
 
-    return hierarchical_pin_by_sheet
+    return hierarchical_pin_by_sheet, bridge_connections
 
 
 def _lowest_common_sheet(
