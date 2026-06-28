@@ -90,7 +90,11 @@ Thumbs.db
 *.kicad_sch
 *.kicad_pcb
 *.kicad_pro
+*.kicad_prl
+*.lck
+_autosave-*
 !examples/**/*.kicad_sch
+!examples/**/*.kicad_pro
 !tests/fixtures/**/*.kicad_sch
 output/
 .circuitweaver/

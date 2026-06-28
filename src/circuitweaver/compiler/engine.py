@@ -32,6 +32,7 @@ from circuitweaver.types import (
     CircuitElement,
     LayoutNode,
     SchematicComponent,
+    SchematicNoConnect,
     SchematicPort,
     SourceComponent,
     SourceGroup,
@@ -375,6 +376,12 @@ class CompileEngine:
         element_to_sheet, element_to_group = self._map_elements(
             source_components, source_groups, source_ports
         )
+        generated_no_connects = self._source_no_connect_markers(
+            source_ports,
+            elements,
+            element_to_sheet,
+        )
+        working_elements = elements + generated_no_connects
 
         # Use the explicit subcircuit_id when present, otherwise the group ID.
         subcircuit_ids = {self._get_group_sheet_id(g) for g in source_groups if g.is_subcircuit}
@@ -398,7 +405,7 @@ class CompileEngine:
         # 3. Process each sheet
         for sheet_id in all_sheet_ids:
             sheet_elements = self._get_sheet_elements(
-                elements + connectivity_elements,
+                working_elements + connectivity_elements,
                 element_to_sheet,
                 sheet_id,
             )
@@ -469,6 +476,31 @@ class CompileEngine:
         ]
 
         return elements + connectivity_elements + schematic_results
+
+    @staticmethod
+    def _source_no_connect_markers(
+        ports: list[SourcePort],
+        elements: list[CircuitElement],
+        element_to_sheet: dict[str, str],
+    ) -> list[SchematicNoConnect]:
+        existing_port_ids = {
+            port_id[5:] if port_id.startswith("port_") else port_id
+            for element in elements
+            if isinstance(element, SchematicNoConnect)
+            and (port_id := element.schematic_port_id)
+        }
+        generated: list[SchematicNoConnect] = []
+        for port in ports:
+            if not port.do_not_connect or port.source_port_id in existing_port_ids:
+                continue
+            generated.append(
+                SchematicNoConnect(
+                    schematic_no_connect_id=f"nc_auto_{port.source_port_id}",
+                    schematic_port_id=port.source_port_id,
+                    sheet_id=element_to_sheet.get(port.source_port_id, port.subcircuit_id or "root"),
+                )
+            )
+        return generated
 
     def check_layout_quality(
         self,

@@ -280,7 +280,6 @@ class SchematicToSExprTransform:
         embedded_defs = {}
         lib_id_to_lib_name = {}
         processed = set()
-        counter = 0
 
         for comp in components:
             source = sources.get(comp.source_component_id)
@@ -293,13 +292,11 @@ class SchematicToSExprTransform:
                 continue
             lib_name, sym_name = lib_parts
 
-            counter += 1
-            embedded_name = f"Sym_{counter}"
-            lib_id_to_lib_name[lib_id] = embedded_name
+            lib_id_to_lib_name[lib_id] = lib_id
             try:
                 from circuitweaver.library.pinout import get_expanded_symbol_definition
-                symbol_def = get_expanded_symbol_definition(sym_name, library_name=lib_name, rename_to=embedded_name)
-                embedded_defs[embedded_name] = self._indent_sexp(symbol_def, indent=4)
+                symbol_def = get_expanded_symbol_definition(sym_name, library_name=lib_name, rename_to=lib_id)
+                embedded_defs[lib_id] = self._indent_sexp(symbol_def, indent=4)
             except Exception as e:
                 logger.warning(f"Could not embed {lib_id}: {e}")
 

@@ -1,4 +1,10 @@
-from circuitweaver.library.pinout import SymbolAdapter, get_symbol_info
+from types import SimpleNamespace
+
+from circuitweaver.library.pinout import (
+    SymbolAdapter,
+    get_expanded_symbol_definition,
+    get_symbol_info,
+)
 
 
 def test_get_symbol_info_resistor():
@@ -42,3 +48,82 @@ def test_get_symbol_info_no_geometry():
     adapter = SymbolAdapter()
     assert adapter.extract_graphic_bounds([]) is None
     assert adapter.extract_pins([]) == []
+
+
+def test_expanded_symbol_embedding_renames_only_top_level_symbol(monkeypatch, tmp_path):
+    lib_file = tmp_path / "Connector_Generic.kicad_sym"
+    lib_file.write_text(
+        """
+(kicad_symbol_lib
+  (symbol "Conn_01x02"
+    (property "Value" "Conn_01x02")
+    (symbol "Conn_01x02_1_1"
+      (pin passive line (at 0 0 0) (number "1") (name "Pin_1"))
+    )
+  )
+)
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "circuitweaver.library.pinout.get_library_paths",
+        lambda: SimpleNamespace(symbols=tmp_path),
+    )
+    get_expanded_symbol_definition.cache_clear()
+
+    symbol_def = get_expanded_symbol_definition(
+        "Conn_01x02",
+        library_name="Connector_Generic",
+        rename_to="Connector_Generic:Conn_01x02",
+    )
+
+    assert '(symbol "Connector_Generic:Conn_01x02"' in symbol_def
+    assert '(symbol "Conn_01x02_1_1"' in symbol_def
+    assert "Connector_Generic:Conn_01x02_1_1" not in symbol_def
+
+    get_expanded_symbol_definition.cache_clear()
+
+
+def test_expanded_symbol_embedding_filters_inherited_properties(monkeypatch, tmp_path):
+    lib_file = tmp_path / "Demo.kicad_sym"
+    lib_file.write_text(
+        """
+(kicad_symbol_lib
+  (symbol "Base"
+    (exclude_from_sim no)
+    (property "Value" "Base")
+    (embedded_fonts no)
+    (symbol "Base_1_1"
+      (pin passive line (at 0 0 0) (number "1") (name "A"))
+    )
+  )
+  (symbol "Child"
+    (extends "Base")
+    (property "Value" "Child")
+    (embedded_fonts no)
+  )
+)
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "circuitweaver.library.pinout.get_library_paths",
+        lambda: SimpleNamespace(symbols=tmp_path),
+    )
+    get_expanded_symbol_definition.cache_clear()
+
+    symbol_def = get_expanded_symbol_definition(
+        "Child",
+        library_name="Demo",
+        rename_to="Demo:Child",
+    )
+
+    assert '(symbol "Demo:Child"' in symbol_def
+    assert '(property "Value" "Child")' in symbol_def
+    assert '(property "Value" "Base")' not in symbol_def
+    assert symbol_def.count("(embedded_fonts no)") == 1
+    assert "(exclude_from_sim no)" in symbol_def
+    assert '(symbol "Child_1_1"' in symbol_def
+    assert "Base_1_1" not in symbol_def
+
+    get_expanded_symbol_definition.cache_clear()

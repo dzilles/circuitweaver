@@ -205,8 +205,8 @@ class LayoutToSchematicTransform:
             )
             if pin_info:
                 source_port_pins.add(str(pin_info.number))
-                px = snap(raw_x + (pin_info.grid_offset.x - symbol.bounding_box_min.x))
-                py = snap(raw_y + (pin_info.grid_offset.y - symbol.bounding_box_min.y))
+                px = snap(cx + pin_info.grid_offset.x)
+                py = snap(cy + pin_info.grid_offset.y)
             else:
                 layout_port = layout_ports.get(f"{nid}:{port.pin_number}")
                 if layout_port is None:
@@ -218,8 +218,10 @@ class LayoutToSchematicTransform:
                     )
                 if layout_port is None:
                     continue
-                px = snap(raw_x + layout_port.x)
-                py = snap(raw_y + layout_port.y)
+                origin_x = cx + (symbol.bounding_box_min.x if symbol else 0)
+                origin_y = cy + (symbol.bounding_box_min.y if symbol else 0)
+                px = snap(origin_x + layout_port.x)
+                py = snap(origin_y + layout_port.y)
 
             final_elements.append(SchematicPort(
                 schematic_port_id=f"port_{get_element_id(port)}",
@@ -230,19 +232,43 @@ class LayoutToSchematicTransform:
 
             # Position attached no-connects
             for nc in elements:
-                if isinstance(nc, SchematicNoConnect) and nc.schematic_port_id == port.source_port_id:
+                if (
+                    isinstance(nc, SchematicNoConnect)
+                    and self._normalize_no_connect_port_id(nc.schematic_port_id) == port.source_port_id
+                ):
                     nc.position = Point(x=px, y=py)
+                    self._append_positioned_no_connect(nc, final_elements)
 
         # Position no-connects for pins without source_ports
         for nc in elements:
-            if isinstance(nc, SchematicNoConnect) and nc.schematic_port_id and "-" in nc.schematic_port_id:
-                nc_comp_id, nc_pin_num = nc.schematic_port_id.rsplit("-", 1)
+            normalized_port_id = (
+                self._normalize_no_connect_port_id(nc.schematic_port_id)
+                if isinstance(nc, SchematicNoConnect)
+                else None
+            )
+            if isinstance(nc, SchematicNoConnect) and normalized_port_id and "-" in normalized_port_id:
+                nc_comp_id, nc_pin_num = normalized_port_id.rsplit("-", 1)
                 if nc_comp_id == nid and nc_pin_num not in source_port_pins:
                     pin_info = symbol_pins.get(nc_pin_num)
                     if pin_info:
-                        px = snap(raw_x + (pin_info.grid_offset.x - symbol.bounding_box_min.x))
-                        py = snap(raw_y + (pin_info.grid_offset.y - symbol.bounding_box_min.y))
+                        px = snap(cx + pin_info.grid_offset.x)
+                        py = snap(cy + pin_info.grid_offset.y)
                         nc.position = Point(x=px, y=py)
+                        self._append_positioned_no_connect(nc, final_elements)
+
+    @staticmethod
+    def _normalize_no_connect_port_id(port_id: str | None) -> str | None:
+        if port_id and port_id.startswith("port_"):
+            return port_id[5:]
+        return port_id
+
+    @staticmethod
+    def _append_positioned_no_connect(
+        nc: SchematicNoConnect,
+        final_elements: list[CircuitElement],
+    ) -> None:
+        if nc.position and not any(get_element_id(e) == nc.schematic_no_connect_id for e in final_elements):
+            final_elements.append(nc)
 
     def _build_box(
         self,
@@ -367,6 +393,12 @@ class LayoutToSchematicTransform:
                 points = [Point(x=snap(section.startPoint.x + raw_x), y=snap(section.startPoint.y + raw_y))]
                 points.extend([Point(x=snap(bp.x + raw_x), y=snap(bp.y + raw_y)) for bp in section.bendPoints])
                 points.append(Point(x=snap(section.endPoint.x + raw_x), y=snap(section.endPoint.y + raw_y)))
+                self._snap_edge_endpoints_to_elements(
+                    points,
+                    edge,
+                    registry,
+                    final_elements,
+                )
 
                 # Create trace edges, skipping zero-length segments
                 trace_edges = []
@@ -394,6 +426,56 @@ class LayoutToSchematicTransform:
                 child, raw_x, raw_y,
                 sheet_id, registry, elements, final_elements, snap,
             )
+
+    def _snap_edge_endpoints_to_elements(
+        self,
+        points: list[Point],
+        edge: LayoutEdge,
+        registry: LayoutRegistry,
+        final_elements: list[CircuitElement],
+    ) -> None:
+        if not points:
+            return
+        if edge.sources:
+            source_position = self._position_for_layout_endpoint(
+                edge.sources[0],
+                registry,
+                final_elements,
+            )
+            if source_position is not None and self._is_near_routed_endpoint(points[0], source_position):
+                points[0] = source_position
+        if edge.targets:
+            target_position = self._position_for_layout_endpoint(
+                edge.targets[0],
+                registry,
+                final_elements,
+            )
+            if target_position is not None and self._is_near_routed_endpoint(points[-1], target_position):
+                points[-1] = target_position
+
+    def _is_near_routed_endpoint(self, point: Point, endpoint: Point) -> bool:
+        return abs(point.x - endpoint.x) <= self.grid_size and abs(point.y - endpoint.y) <= self.grid_size
+
+    @staticmethod
+    def _position_for_layout_endpoint(
+        layout_id: str,
+        registry: LayoutRegistry,
+        final_elements: list[CircuitElement],
+    ) -> Point | None:
+        element = registry.get_element_by_layout_id(layout_id)
+        if isinstance(element, SourcePort):
+            return next(
+                (
+                    port.center
+                    for port in final_elements
+                    if isinstance(port, SchematicPort)
+                    and port.source_port_id == element.source_port_id
+                ),
+                None,
+            )
+        if isinstance(element, (SchematicHierarchicalPin, SchematicNetLabel, SchematicHierarchicalLabel)):
+            return element.center
+        return None
 
     @staticmethod
     def _source_trace_id_for_edge(edge: LayoutEdge) -> str | None:
@@ -486,15 +568,14 @@ class LayoutToSchematicTransform:
             )
         return bounds
 
-    @staticmethod
-    def _detour_around_bounds(edge: SchematicTraceEdge, bounds: _Bounds) -> list[SchematicTraceEdge]:
+    def _detour_around_bounds(self, edge: SchematicTraceEdge, bounds: _Bounds) -> list[SchematicTraceEdge]:
         start = edge.from_
         end = edge.to
         margin = 20
         if start.y == end.y and bounds.y1 < start.y < bounds.y2:
             x1, x2 = sorted((start.x, end.x))
             if x1 < bounds.x2 and x2 > bounds.x1:
-                detour_y = bounds.y1 - margin
+                detour_y = snap_to_grid(bounds.y1 - margin, self.grid_size)
                 p1 = Point(x=start.x, y=detour_y)
                 p2 = Point(x=end.x, y=detour_y)
                 return [
@@ -505,7 +586,7 @@ class LayoutToSchematicTransform:
         if start.x == end.x and bounds.x1 < start.x < bounds.x2:
             y1, y2 = sorted((start.y, end.y))
             if y1 < bounds.y2 and y2 > bounds.y1:
-                detour_x = bounds.x1 - margin
+                detour_x = snap_to_grid(bounds.x1 - margin, self.grid_size)
                 p1 = Point(x=detour_x, y=start.y)
                 p2 = Point(x=detour_x, y=end.y)
                 return [

@@ -24,12 +24,14 @@ from circuitweaver.transform import (
     get_effective_symbol_id,
     snap_to_grid,
 )
+from circuitweaver.transform.layout_to_schematic import _Bounds
 from circuitweaver.transform.schematic_to_s_expr import GRID_TO_MM, SchematicToSExprTransform
 from circuitweaver.types import (
     LayoutEdge,
     LayoutEdgeSection,
     LayoutNode,
     LayoutPoint,
+    LayoutPort,
     Point,
     SchematicBox,
     SchematicComponent,
@@ -39,6 +41,7 @@ from circuitweaver.types import (
     SchematicNoConnect,
     SchematicPort,
     SchematicTrace,
+    SchematicTraceEdge,
     SheetConnection,
     SourceComponent,
     SourceGroup,
@@ -432,9 +435,14 @@ def test_cmp_033_millimeter_values_format_with_four_decimal_places():
 
 
 def test_cmp_034_symbol_library_definitions_embed_when_available_and_missing_libs_do_not_abort(monkeypatch):
-    monkeypatch.setattr("circuitweaver.library.pinout.get_expanded_symbol_definition", lambda *args, **kwargs: "(symbol \"R\")")
+    monkeypatch.setattr(
+        "circuitweaver.library.pinout.get_expanded_symbol_definition",
+        lambda *args, **kwargs: f"(symbol \"{kwargs['rename_to']}\")",
+    )
     text = _sexpr_text()
     assert "lib_symbols" in text
+    assert '(symbol "Device:R")' in text
+    assert '(lib_id "Device:R")' in text
 
 
 def test_cmp_035_hierarchical_sheet_boxes_become_kicad_sheet_expressions():
@@ -785,14 +793,69 @@ def test_lay_062_no_connect_edges_do_not_generate_schematic_traces():
     assert not any(isinstance(e, SchematicTrace) for e in result)
 
 
-def test_lay_063_subcircuit_group_without_subcircuit_id_uses_source_group_id_child_sheet():
+def test_lay_063_symbol_pin_positions_and_wire_endpoints_use_snapped_symbol_origin():
+    comp = SourceComponent(source_component_id="C1", name="C1", symbol_id="Device:C")
+    port = SourcePort(source_port_id="C1_1", source_component_id="C1", name="1", pin_number=1)
+    symbol = SimpleNamespace(
+        width=40,
+        height=60,
+        bounding_box_min=Point(x=0, y=-30),
+        pins=[SimpleNamespace(number="1", name="1", grid_offset=Point(x=0, y=-30))],
+    )
+    from circuitweaver.transform.source_to_layout import LayoutRegistry
+    registry = LayoutRegistry()
+    registry.register_node(comp, "C1")
+    registry.register_port(port, "C1:1")
+    layout = LayoutNode(
+        id="root",
+        children=[LayoutNode(id="C1", x=0, y=635, width=40, height=60, ports=[LayoutPort(id="C1:1", x=0, y=0)])],
+        edges=[
+            LayoutEdge(
+                id="e_T1",
+                sources=["C1:1"],
+                targets=["external"],
+                sections=[LayoutEdgeSection(id="s", startPoint=LayoutPoint(x=0, y=640), endPoint=LayoutPoint(x=20, y=640))],
+            )
+        ],
+    )
+    result = LayoutToSchematicTransform(symbol_map={"Device:C": symbol}).transform("root", layout, registry, [comp, port])
+    schematic_port = next(e for e in result if isinstance(e, SchematicPort))
+    trace = next(e for e in result if isinstance(e, SchematicTrace))
+
+    assert schematic_port.center == Point(x=0, y=630)
+    assert trace.edges[0].from_ == schematic_port.center
+
+
+def test_lay_064_detours_snap_to_grid_when_component_bounds_are_off_grid():
+    transform = LayoutToSchematicTransform(grid_size=10)
+    edge = SchematicTraceEdge.model_validate({"from": Point(x=0, y=50), "to": Point(x=100, y=50)})
+    routed = transform._detour_around_bounds(edge, _Bounds(x1=25, y1=38.35, x2=75, y2=61.65))
+
+    assert len(routed) == 3
+    assert routed[0].to.y == 20
+    assert routed[1].from_.y == 20
+    assert routed[1].to.y == 20
+
+
+def test_lay_065_source_port_do_not_connect_generates_positioned_no_connect():
+    elements = [
+        SourceComponent(source_component_id="U1", name="U1"),
+        SourcePort(source_port_id="U1_1", source_component_id="U1", name="1", pin_number=1, do_not_connect=True),
+    ]
+    result = _engine().layout(elements)
+    no_connect = next(e for e in result if isinstance(e, SchematicNoConnect))
+    assert no_connect.schematic_no_connect_id == "nc_auto_U1_1"
+    assert no_connect.position is not None
+
+
+def test_lay_066_subcircuit_group_without_subcircuit_id_uses_source_group_id_child_sheet():
     group = SourceGroup(source_group_id="G1", is_subcircuit=True)
     layout, registry = SourceToLayoutTransform().transform("root", [group])
     result = LayoutToSchematicTransform().transform("root", layout, registry, [group])
     assert next(e for e in result if isinstance(e, SchematicBox)).child_sheet_id == "G1"
 
 
-def test_lay_064_source_ports_map_to_symbol_pins_by_pin_number_or_name():
+def test_lay_067_source_ports_map_to_symbol_pins_by_pin_number_or_name():
     elements = [SourceComponent(source_component_id="R1", name="R1", symbol_id="Device:R"), SourcePort(source_port_id="R1_A", source_component_id="R1", name="A")]
     _, registry = SourceToLayoutTransform(symbol_map={"Device:R": _pins_symbol()}).transform("root", elements)
     assert registry.element_to_port["R1_A"] == "R1:1"

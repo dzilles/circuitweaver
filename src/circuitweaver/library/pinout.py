@@ -307,6 +307,38 @@ def _extract_balanced_sexp(content: str, start_pos: int) -> str:
     return content[start_pos:]
 
 
+def _sexp_item_key(item: Any) -> str | None:
+    if not isinstance(item, list) or not item:
+        return None
+    key = item[0]
+    if isinstance(key, sexpdata.Symbol):
+        return key.value()
+    return str(key)
+
+
+def _inherited_symbol_content(symbol_def: str, base_name: str, child_name: str) -> str:
+    """Return inherited implementation details without child-overridden metadata."""
+    try:
+        parsed = sexpdata.loads(symbol_def)
+    except Exception:
+        return ""
+    if not isinstance(parsed, list) or len(parsed) < 3:
+        return ""
+
+    inherited_items = []
+    for item in parsed[2:]:
+        # Child symbols normally override library metadata/properties. Merging
+        # inherited properties creates duplicate fields and KiCad flags the
+        # embedded symbol as different from its library copy.
+        if _sexp_item_key(item) in {"property", "embedded_fonts"}:
+            continue
+        rendered = sexpdata.dumps(item)
+        rendered = rendered.replace(f'"{base_name}_', f'"{child_name}_')
+        rendered = rendered.replace(f'"{base_name}"', f'"{child_name}"')
+        inherited_items.append(rendered)
+    return "\n    ".join(inherited_items)
+
+
 @lru_cache(maxsize=128)
 def get_expanded_symbol_definition(symbol_id: str, library_name: str, rename_to: str | None = None) -> str:
     """Get the full symbol definition for embedding, recursively handling extensions."""
@@ -339,26 +371,22 @@ def get_expanded_symbol_definition(symbol_id: str, library_name: str, rename_to:
         base_start = base_def.find('(')
         if base_start != -1:
             base_inner = _extract_balanced_sexp(base_def, base_start)
-            # Find everything inside the base_inner: (symbol "NAME" <HERE>)
-            inner_match = re.search(rf'\(symbol\s+"{re.escape(base_name)}"\s+(.*)\)\s*$', base_inner, re.DOTALL)
-            if inner_match:
-                base_content = inner_match.group(1)
+            base_content = _inherited_symbol_content(base_inner, base_name, symbol_name)
 
-                # Rename the base_name prefixes to symbol_name in base_content
-                base_content = base_content.replace(f'"{base_name}_', f'"{symbol_name}_')
-                base_content = base_content.replace(f'"{base_name}"', f'"{symbol_name}"')
-
-                # Merge into child: Find the index of the LAST closing paren
-                last_paren_idx = symbol_def.rfind(')')
-                if last_paren_idx != -1:
-                    symbol_def = symbol_def[:last_paren_idx] + "\n    " + base_content + "\n  )"
+            # Merge into child: Find the index of the LAST closing paren
+            last_paren_idx = symbol_def.rfind(')')
+            if base_content and last_paren_idx != -1:
+                symbol_def = symbol_def[:last_paren_idx] + "\n    " + base_content + "\n  )"
 
     if rename_to:
-        # Rename the main symbol and ALL internal references (units, etc)
-        # We use a greedy replace for the name but ensure we don't hit parts of other tokens
-        symbol_def = symbol_def.replace(f'"{symbol_name}"', f'"{rename_to}"')
-        symbol_def = symbol_def.replace(f'"{symbol_name}_', f'"{rename_to}_')
-        # Also catch the case where the name might be used in a property without quotes (rare but possible)
-        symbol_def = re.sub(rf'\(symbol\s+"?{re.escape(symbol_name)}"?', f'(symbol "{rename_to}"', symbol_def)
+        # KiCad embedded library symbols use the full lib_id only on the
+        # top-level symbol. Nested unit symbols must keep the plain symbol
+        # prefix, e.g. (symbol "Device:R" ... (symbol "R_0_1" ...)).
+        symbol_def = re.sub(
+            rf'\(symbol\s+"?{re.escape(symbol_name)}"?',
+            f'(symbol "{rename_to}"',
+            symbol_def,
+            count=1,
+        )
 
     return symbol_def

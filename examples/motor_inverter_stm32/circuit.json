@@ -1,0 +1,2065 @@
+[
+  {
+    "type": "source_project_config",
+    "source_project_config_id": "project_config",
+    "global_net_names": [
+      "3V3",
+      "GND",
+      "HIN_A",
+      "HIN_B",
+      "HIN_C",
+      "LIN_A",
+      "LIN_B",
+      "LIN_C",
+      "SHUNT_TOP",
+      "VBUS_SENSE",
+      "VDRV_12V"
+    ],
+    "use_kicad_power_symbols_as_global_nets": false
+  },
+  {
+    "type": "source_group",
+    "source_group_id": "motor_inverter",
+    "name": "Motor Inverter",
+    "is_subcircuit": true
+  },
+  {
+    "type": "source_group",
+    "source_group_id": "stm32_controller",
+    "name": "STM32 Controller",
+    "is_subcircuit": true
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "C1",
+    "name": "C1",
+    "symbol_id": "Device:C",
+    "subcircuit_id": "stm32_controller",
+    "display_value": "100 nF",
+    "footprint": "Capacitor_SMD:C_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "C2",
+    "name": "C2",
+    "symbol_id": "Device:C",
+    "subcircuit_id": "stm32_controller",
+    "display_value": "100 nF",
+    "footprint": "Capacitor_SMD:C_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "C4",
+    "name": "C4",
+    "symbol_id": "Device:C_Polarized",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "470 uF / 63 V",
+    "footprint": "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "C5",
+    "name": "C5",
+    "symbol_id": "Device:C",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "100 nF bootstrap",
+    "footprint": "Capacitor_SMD:C_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "C6",
+    "name": "C6",
+    "symbol_id": "Device:C",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "100 nF bootstrap",
+    "footprint": "Capacitor_SMD:C_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "C7",
+    "name": "C7",
+    "symbol_id": "Device:C",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "100 nF bootstrap",
+    "footprint": "Capacitor_SMD:C_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "C8",
+    "name": "C8",
+    "symbol_id": "Device:C",
+    "display_value": "18 pF",
+    "footprint": "Capacitor_SMD:C_0603_1608Metric",
+    "subcircuit_id": "stm32_controller"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "C9",
+    "name": "C9",
+    "symbol_id": "Device:C",
+    "display_value": "18 pF",
+    "footprint": "Capacitor_SMD:C_0603_1608Metric",
+    "subcircuit_id": "stm32_controller"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "D1",
+    "name": "D1",
+    "symbol_id": "Device:D_Schottky",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "SS14 bootstrap",
+    "footprint": "Diode_SMD:D_SMA"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "D2",
+    "name": "D2",
+    "symbol_id": "Device:D_Schottky",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "SS14 bootstrap",
+    "footprint": "Diode_SMD:D_SMA"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "D3",
+    "name": "D3",
+    "symbol_id": "Device:D_Schottky",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "SS14 bootstrap",
+    "footprint": "Diode_SMD:D_SMA"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "J1",
+    "name": "J1",
+    "symbol_id": "Connector_Generic:Conn_01x02",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "VBUS input",
+    "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "J2",
+    "name": "J2",
+    "symbol_id": "Connector_Generic:Conn_01x03",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "3-phase motor output",
+    "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "J3",
+    "name": "J3",
+    "symbol_id": "Connector_Generic:Conn_01x04",
+    "subcircuit_id": "stm32_controller",
+    "display_value": "SWD 1x4",
+    "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "J4",
+    "name": "J4",
+    "symbol_id": "Connector_Generic:Conn_01x03",
+    "display_value": "3V3 / 12V supply input",
+    "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+    "subcircuit_id": "motor_inverter"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "PF_3V3",
+    "name": "PF_3V3",
+    "symbol_id": "power:PWR_FLAG",
+    "display_value": "PWR_FLAG 3V3",
+    "subcircuit_id": "motor_inverter"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "PF_GND",
+    "name": "PF_GND",
+    "symbol_id": "power:PWR_FLAG",
+    "display_value": "PWR_FLAG GND",
+    "subcircuit_id": "motor_inverter"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "PF_VDRV",
+    "name": "PF_VDRV",
+    "symbol_id": "power:PWR_FLAG",
+    "display_value": "PWR_FLAG VDRV_12V",
+    "subcircuit_id": "motor_inverter"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "Q1",
+    "name": "Q1",
+    "symbol_id": "Transistor_FET:Q_NMOS_GDS",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "N-MOSFET high-side A",
+    "footprint": "Package_TO_SOT_SMD:TO-252-2"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "Q2",
+    "name": "Q2",
+    "symbol_id": "Transistor_FET:Q_NMOS_GDS",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "N-MOSFET low-side A",
+    "footprint": "Package_TO_SOT_SMD:TO-252-2"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "Q3",
+    "name": "Q3",
+    "symbol_id": "Transistor_FET:Q_NMOS_GDS",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "N-MOSFET high-side B",
+    "footprint": "Package_TO_SOT_SMD:TO-252-2"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "Q4",
+    "name": "Q4",
+    "symbol_id": "Transistor_FET:Q_NMOS_GDS",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "N-MOSFET low-side B",
+    "footprint": "Package_TO_SOT_SMD:TO-252-2"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "Q5",
+    "name": "Q5",
+    "symbol_id": "Transistor_FET:Q_NMOS_GDS",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "N-MOSFET high-side C",
+    "footprint": "Package_TO_SOT_SMD:TO-252-2"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "Q6",
+    "name": "Q6",
+    "symbol_id": "Transistor_FET:Q_NMOS_GDS",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "N-MOSFET low-side C",
+    "footprint": "Package_TO_SOT_SMD:TO-252-2"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "R2",
+    "name": "R2",
+    "symbol_id": "Device:R",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "100 k",
+    "footprint": "Resistor_SMD:R_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "R3",
+    "name": "R3",
+    "symbol_id": "Device:R",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "10 k",
+    "footprint": "Resistor_SMD:R_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "RG1",
+    "name": "RG1",
+    "symbol_id": "Device:R",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "10 R",
+    "footprint": "Resistor_SMD:R_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "RG2",
+    "name": "RG2",
+    "symbol_id": "Device:R",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "10 R",
+    "footprint": "Resistor_SMD:R_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "RG3",
+    "name": "RG3",
+    "symbol_id": "Device:R",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "10 R",
+    "footprint": "Resistor_SMD:R_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "RG4",
+    "name": "RG4",
+    "symbol_id": "Device:R",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "10 R",
+    "footprint": "Resistor_SMD:R_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "RG5",
+    "name": "RG5",
+    "symbol_id": "Device:R",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "10 R",
+    "footprint": "Resistor_SMD:R_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "RG6",
+    "name": "RG6",
+    "symbol_id": "Device:R",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "10 R",
+    "footprint": "Resistor_SMD:R_0603_1608Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "RS1",
+    "name": "RS1",
+    "symbol_id": "Device:R",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "5 mR shunt",
+    "footprint": "Resistor_SMD:R_2512_6332Metric"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "U1",
+    "name": "U1",
+    "symbol_id": "MCU_ST_STM32G4:STM32G431CBUx",
+    "subcircuit_id": "stm32_controller",
+    "display_value": "STM32G431CBUx motor-control MCU",
+    "footprint": "Package_DFN_QFN:QFN-48-1EP_7x7mm_P0.5mm_EP5.6x5.6mm"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "U2",
+    "name": "U2",
+    "symbol_id": "Driver_FET:IR2101",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "IR2101 phase A driver",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "U3",
+    "name": "U3",
+    "symbol_id": "Driver_FET:IR2101",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "IR2101 phase B driver",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "U4",
+    "name": "U4",
+    "symbol_id": "Driver_FET:IR2101",
+    "subcircuit_id": "motor_inverter",
+    "display_value": "IR2101 phase C driver",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
+  },
+  {
+    "type": "source_component",
+    "source_component_id": "Y1",
+    "name": "Y1",
+    "symbol_id": "Device:Crystal",
+    "subcircuit_id": "stm32_controller",
+    "display_value": "8 MHz",
+    "footprint": "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm"
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "C1",
+    "source_port_id": "C1-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "C1",
+    "source_port_id": "C1-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "C2",
+    "source_port_id": "C2-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "C2",
+    "source_port_id": "C2-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "C4",
+    "source_port_id": "C4-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "C4",
+    "source_port_id": "C4-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "C5",
+    "source_port_id": "C5-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "C5",
+    "source_port_id": "C5-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "C6",
+    "source_port_id": "C6-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "C6",
+    "source_port_id": "C6-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "C7",
+    "source_port_id": "C7-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "C7",
+    "source_port_id": "C7-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "C8-1",
+    "source_component_id": "C8",
+    "name": "1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "C8-2",
+    "source_component_id": "C8",
+    "name": "2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "C9-1",
+    "source_component_id": "C9",
+    "name": "1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "C9-2",
+    "source_component_id": "C9",
+    "name": "2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "K",
+    "source_component_id": "D1",
+    "source_port_id": "D1-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "A",
+    "source_component_id": "D1",
+    "source_port_id": "D1-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "K",
+    "source_component_id": "D2",
+    "source_port_id": "D2-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "A",
+    "source_component_id": "D2",
+    "source_port_id": "D2-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "K",
+    "source_component_id": "D3",
+    "source_port_id": "D3-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "A",
+    "source_component_id": "D3",
+    "source_port_id": "D3-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "Pin_1",
+    "source_component_id": "J1",
+    "source_port_id": "J1-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "Pin_2",
+    "source_component_id": "J1",
+    "source_port_id": "J1-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "Pin_1",
+    "source_component_id": "J2",
+    "source_port_id": "J2-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "Pin_2",
+    "source_component_id": "J2",
+    "source_port_id": "J2-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "Pin_3",
+    "source_component_id": "J2",
+    "source_port_id": "J2-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "Pin_1",
+    "source_component_id": "J3",
+    "source_port_id": "J3-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "Pin_2",
+    "source_component_id": "J3",
+    "source_port_id": "J3-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "Pin_3",
+    "source_component_id": "J3",
+    "source_port_id": "J3-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "Pin_4",
+    "source_component_id": "J3",
+    "source_port_id": "J3-4",
+    "pin_number": 4
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "J4-1",
+    "source_component_id": "J4",
+    "name": "3V3",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "J4-2",
+    "source_component_id": "J4",
+    "name": "VDRV_12V",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "J4-3",
+    "source_component_id": "J4",
+    "name": "GND",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "PF_3V3-1",
+    "source_component_id": "PF_3V3",
+    "name": "PWR",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "PF_GND-1",
+    "source_component_id": "PF_GND",
+    "name": "PWR",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "source_port_id": "PF_VDRV-1",
+    "source_component_id": "PF_VDRV",
+    "name": "PWR",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "G",
+    "source_component_id": "Q1",
+    "source_port_id": "Q1-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "D",
+    "source_component_id": "Q1",
+    "source_port_id": "Q1-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "S",
+    "source_component_id": "Q1",
+    "source_port_id": "Q1-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "G",
+    "source_component_id": "Q2",
+    "source_port_id": "Q2-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "D",
+    "source_component_id": "Q2",
+    "source_port_id": "Q2-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "S",
+    "source_component_id": "Q2",
+    "source_port_id": "Q2-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "G",
+    "source_component_id": "Q3",
+    "source_port_id": "Q3-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "D",
+    "source_component_id": "Q3",
+    "source_port_id": "Q3-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "S",
+    "source_component_id": "Q3",
+    "source_port_id": "Q3-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "G",
+    "source_component_id": "Q4",
+    "source_port_id": "Q4-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "D",
+    "source_component_id": "Q4",
+    "source_port_id": "Q4-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "S",
+    "source_component_id": "Q4",
+    "source_port_id": "Q4-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "G",
+    "source_component_id": "Q5",
+    "source_port_id": "Q5-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "D",
+    "source_component_id": "Q5",
+    "source_port_id": "Q5-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "S",
+    "source_component_id": "Q5",
+    "source_port_id": "Q5-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "G",
+    "source_component_id": "Q6",
+    "source_port_id": "Q6-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "D",
+    "source_component_id": "Q6",
+    "source_port_id": "Q6-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "S",
+    "source_component_id": "Q6",
+    "source_port_id": "Q6-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "R2",
+    "source_port_id": "R2-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "R2",
+    "source_port_id": "R2-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "R3",
+    "source_port_id": "R3-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "R3",
+    "source_port_id": "R3-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "RG1",
+    "source_port_id": "RG1-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "RG1",
+    "source_port_id": "RG1-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "RG2",
+    "source_port_id": "RG2-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "RG2",
+    "source_port_id": "RG2-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "RG3",
+    "source_port_id": "RG3-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "RG3",
+    "source_port_id": "RG3-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "RG4",
+    "source_port_id": "RG4-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "RG4",
+    "source_port_id": "RG4-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "RG5",
+    "source_port_id": "RG5-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "RG5",
+    "source_port_id": "RG5-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "RG6",
+    "source_port_id": "RG6-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "RG6",
+    "source_port_id": "RG6-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "RS1",
+    "source_port_id": "RS1-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "RS1",
+    "source_port_id": "RS1-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "VBAT",
+    "source_component_id": "U1",
+    "source_port_id": "U1-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "PC13",
+    "source_component_id": "U1",
+    "source_port_id": "U1-2",
+    "pin_number": 2,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PC14",
+    "source_component_id": "U1",
+    "source_port_id": "U1-3",
+    "pin_number": 3,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PC15",
+    "source_component_id": "U1",
+    "source_port_id": "U1-4",
+    "pin_number": 4,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PF0",
+    "source_component_id": "U1",
+    "source_port_id": "U1-5",
+    "pin_number": 5
+  },
+  {
+    "type": "source_port",
+    "name": "PF1",
+    "source_component_id": "U1",
+    "source_port_id": "U1-6",
+    "pin_number": 6
+  },
+  {
+    "type": "source_port",
+    "name": "PG10",
+    "source_component_id": "U1",
+    "source_port_id": "U1-7",
+    "pin_number": 7,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PA0",
+    "source_component_id": "U1",
+    "source_port_id": "U1-8",
+    "pin_number": 8
+  },
+  {
+    "type": "source_port",
+    "name": "PA1",
+    "source_component_id": "U1",
+    "source_port_id": "U1-9",
+    "pin_number": 9
+  },
+  {
+    "type": "source_port",
+    "name": "PA2",
+    "source_component_id": "U1",
+    "source_port_id": "U1-10",
+    "pin_number": 10,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PA3",
+    "source_component_id": "U1",
+    "source_port_id": "U1-11",
+    "pin_number": 11,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PA4",
+    "source_component_id": "U1",
+    "source_port_id": "U1-12",
+    "pin_number": 12,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PA5",
+    "source_component_id": "U1",
+    "source_port_id": "U1-13",
+    "pin_number": 13,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PA6",
+    "source_component_id": "U1",
+    "source_port_id": "U1-14",
+    "pin_number": 14,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PA7",
+    "source_component_id": "U1",
+    "source_port_id": "U1-15",
+    "pin_number": 15
+  },
+  {
+    "type": "source_port",
+    "name": "PC4",
+    "source_component_id": "U1",
+    "source_port_id": "U1-16",
+    "pin_number": 16,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB0",
+    "source_component_id": "U1",
+    "source_port_id": "U1-17",
+    "pin_number": 17
+  },
+  {
+    "type": "source_port",
+    "name": "PB1",
+    "source_component_id": "U1",
+    "source_port_id": "U1-18",
+    "pin_number": 18
+  },
+  {
+    "type": "source_port",
+    "name": "PB2",
+    "source_component_id": "U1",
+    "source_port_id": "U1-19",
+    "pin_number": 19,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "VREF+",
+    "source_component_id": "U1",
+    "source_port_id": "U1-20",
+    "pin_number": 20
+  },
+  {
+    "type": "source_port",
+    "name": "VDDA",
+    "source_component_id": "U1",
+    "source_port_id": "U1-21",
+    "pin_number": 21
+  },
+  {
+    "type": "source_port",
+    "name": "PB10",
+    "source_component_id": "U1",
+    "source_port_id": "U1-22",
+    "pin_number": 22,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "VDD",
+    "source_component_id": "U1",
+    "source_port_id": "U1-23",
+    "pin_number": 23
+  },
+  {
+    "type": "source_port",
+    "name": "PB11",
+    "source_component_id": "U1",
+    "source_port_id": "U1-24",
+    "pin_number": 24,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB12",
+    "source_component_id": "U1",
+    "source_port_id": "U1-25",
+    "pin_number": 25,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB13",
+    "source_component_id": "U1",
+    "source_port_id": "U1-26",
+    "pin_number": 26,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB14",
+    "source_component_id": "U1",
+    "source_port_id": "U1-27",
+    "pin_number": 27,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB15",
+    "source_component_id": "U1",
+    "source_port_id": "U1-28",
+    "pin_number": 28,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PC6",
+    "source_component_id": "U1",
+    "source_port_id": "U1-29",
+    "pin_number": 29,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PA8",
+    "source_component_id": "U1",
+    "source_port_id": "U1-30",
+    "pin_number": 30
+  },
+  {
+    "type": "source_port",
+    "name": "PA9",
+    "source_component_id": "U1",
+    "source_port_id": "U1-31",
+    "pin_number": 31
+  },
+  {
+    "type": "source_port",
+    "name": "PA10",
+    "source_component_id": "U1",
+    "source_port_id": "U1-32",
+    "pin_number": 32
+  },
+  {
+    "type": "source_port",
+    "name": "PA11",
+    "source_component_id": "U1",
+    "source_port_id": "U1-33",
+    "pin_number": 33,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PA12",
+    "source_component_id": "U1",
+    "source_port_id": "U1-34",
+    "pin_number": 34,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "VDD",
+    "source_component_id": "U1",
+    "source_port_id": "U1-35",
+    "pin_number": 35
+  },
+  {
+    "type": "source_port",
+    "name": "PA13",
+    "source_component_id": "U1",
+    "source_port_id": "U1-36",
+    "pin_number": 36
+  },
+  {
+    "type": "source_port",
+    "name": "PA14",
+    "source_component_id": "U1",
+    "source_port_id": "U1-37",
+    "pin_number": 37
+  },
+  {
+    "type": "source_port",
+    "name": "PA15",
+    "source_component_id": "U1",
+    "source_port_id": "U1-38",
+    "pin_number": 38,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PC10",
+    "source_component_id": "U1",
+    "source_port_id": "U1-39",
+    "pin_number": 39,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PC11",
+    "source_component_id": "U1",
+    "source_port_id": "U1-40",
+    "pin_number": 40,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB3",
+    "source_component_id": "U1",
+    "source_port_id": "U1-41",
+    "pin_number": 41,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB4",
+    "source_component_id": "U1",
+    "source_port_id": "U1-42",
+    "pin_number": 42,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB5",
+    "source_component_id": "U1",
+    "source_port_id": "U1-43",
+    "pin_number": 43,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB6",
+    "source_component_id": "U1",
+    "source_port_id": "U1-44",
+    "pin_number": 44,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB7",
+    "source_component_id": "U1",
+    "source_port_id": "U1-45",
+    "pin_number": 45,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB8",
+    "source_component_id": "U1",
+    "source_port_id": "U1-46",
+    "pin_number": 46,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "PB9",
+    "source_component_id": "U1",
+    "source_port_id": "U1-47",
+    "pin_number": 47,
+    "do_not_connect": true
+  },
+  {
+    "type": "source_port",
+    "name": "VDD",
+    "source_component_id": "U1",
+    "source_port_id": "U1-48",
+    "pin_number": 48
+  },
+  {
+    "type": "source_port",
+    "name": "VSS",
+    "source_component_id": "U1",
+    "source_port_id": "U1-49",
+    "pin_number": 49
+  },
+  {
+    "type": "source_port",
+    "name": "VCC",
+    "source_component_id": "U2",
+    "source_port_id": "U2-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "HIN",
+    "source_component_id": "U2",
+    "source_port_id": "U2-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "LIN",
+    "source_component_id": "U2",
+    "source_port_id": "U2-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "COM",
+    "source_component_id": "U2",
+    "source_port_id": "U2-4",
+    "pin_number": 4
+  },
+  {
+    "type": "source_port",
+    "name": "LO",
+    "source_component_id": "U2",
+    "source_port_id": "U2-5",
+    "pin_number": 5
+  },
+  {
+    "type": "source_port",
+    "name": "VS",
+    "source_component_id": "U2",
+    "source_port_id": "U2-6",
+    "pin_number": 6
+  },
+  {
+    "type": "source_port",
+    "name": "HO",
+    "source_component_id": "U2",
+    "source_port_id": "U2-7",
+    "pin_number": 7
+  },
+  {
+    "type": "source_port",
+    "name": "VB",
+    "source_component_id": "U2",
+    "source_port_id": "U2-8",
+    "pin_number": 8
+  },
+  {
+    "type": "source_port",
+    "name": "VCC",
+    "source_component_id": "U3",
+    "source_port_id": "U3-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "HIN",
+    "source_component_id": "U3",
+    "source_port_id": "U3-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "LIN",
+    "source_component_id": "U3",
+    "source_port_id": "U3-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "COM",
+    "source_component_id": "U3",
+    "source_port_id": "U3-4",
+    "pin_number": 4
+  },
+  {
+    "type": "source_port",
+    "name": "LO",
+    "source_component_id": "U3",
+    "source_port_id": "U3-5",
+    "pin_number": 5
+  },
+  {
+    "type": "source_port",
+    "name": "VS",
+    "source_component_id": "U3",
+    "source_port_id": "U3-6",
+    "pin_number": 6
+  },
+  {
+    "type": "source_port",
+    "name": "HO",
+    "source_component_id": "U3",
+    "source_port_id": "U3-7",
+    "pin_number": 7
+  },
+  {
+    "type": "source_port",
+    "name": "VB",
+    "source_component_id": "U3",
+    "source_port_id": "U3-8",
+    "pin_number": 8
+  },
+  {
+    "type": "source_port",
+    "name": "VCC",
+    "source_component_id": "U4",
+    "source_port_id": "U4-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "HIN",
+    "source_component_id": "U4",
+    "source_port_id": "U4-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_port",
+    "name": "LIN",
+    "source_component_id": "U4",
+    "source_port_id": "U4-3",
+    "pin_number": 3
+  },
+  {
+    "type": "source_port",
+    "name": "COM",
+    "source_component_id": "U4",
+    "source_port_id": "U4-4",
+    "pin_number": 4
+  },
+  {
+    "type": "source_port",
+    "name": "LO",
+    "source_component_id": "U4",
+    "source_port_id": "U4-5",
+    "pin_number": 5
+  },
+  {
+    "type": "source_port",
+    "name": "VS",
+    "source_component_id": "U4",
+    "source_port_id": "U4-6",
+    "pin_number": 6
+  },
+  {
+    "type": "source_port",
+    "name": "HO",
+    "source_component_id": "U4",
+    "source_port_id": "U4-7",
+    "pin_number": 7
+  },
+  {
+    "type": "source_port",
+    "name": "VB",
+    "source_component_id": "U4",
+    "source_port_id": "U4-8",
+    "pin_number": 8
+  },
+  {
+    "type": "source_port",
+    "name": "1",
+    "source_component_id": "Y1",
+    "source_port_id": "Y1-1",
+    "pin_number": 1
+  },
+  {
+    "type": "source_port",
+    "name": "2",
+    "source_component_id": "Y1",
+    "source_port_id": "Y1-2",
+    "pin_number": 2
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "3V3",
+    "name": "3V3",
+    "is_power": true,
+    "is_global": true,
+    "trace_width": 0.3
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "BOOT_A",
+    "name": "BOOT_A"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "BOOT_B",
+    "name": "BOOT_B"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "BOOT_C",
+    "name": "BOOT_C"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "GATE_HA",
+    "name": "GATE_HA"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "GATE_HB",
+    "name": "GATE_HB"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "GATE_HC",
+    "name": "GATE_HC"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "GATE_LA",
+    "name": "GATE_LA"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "GATE_LB",
+    "name": "GATE_LB"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "GATE_LC",
+    "name": "GATE_LC"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "GND",
+    "name": "GND",
+    "is_ground": true,
+    "is_global": true,
+    "trace_width": 1.0
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "HIN_A",
+    "name": "HIN_A",
+    "is_digital_signal": true,
+    "is_global": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "HIN_B",
+    "name": "HIN_B",
+    "is_digital_signal": true,
+    "is_global": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "HIN_C",
+    "name": "HIN_C",
+    "is_digital_signal": true,
+    "is_global": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "HO_A",
+    "name": "HO_A"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "HO_B",
+    "name": "HO_B"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "HO_C",
+    "name": "HO_C"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "HSE_IN",
+    "name": "HSE_IN",
+    "is_analog_signal": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "HSE_OUT",
+    "name": "HSE_OUT",
+    "is_analog_signal": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "LIN_A",
+    "name": "LIN_A",
+    "is_digital_signal": true,
+    "is_global": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "LIN_B",
+    "name": "LIN_B",
+    "is_digital_signal": true,
+    "is_global": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "LIN_C",
+    "name": "LIN_C",
+    "is_digital_signal": true,
+    "is_global": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "LO_A",
+    "name": "LO_A"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "LO_B",
+    "name": "LO_B"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "LO_C",
+    "name": "LO_C"
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "PHASE_A",
+    "name": "PHASE_A",
+    "trace_width": 1.5
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "PHASE_B",
+    "name": "PHASE_B",
+    "trace_width": 1.5
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "PHASE_C",
+    "name": "PHASE_C",
+    "trace_width": 1.5
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "SHUNT_TOP",
+    "name": "SHUNT_TOP",
+    "is_analog_signal": true,
+    "is_global": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "SWCLK",
+    "name": "SWCLK",
+    "is_digital_signal": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "SWDIO",
+    "name": "SWDIO",
+    "is_digital_signal": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "VBUS",
+    "name": "VBUS",
+    "is_power": true,
+    "trace_width": 1.5
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "VBUS_SENSE",
+    "name": "VBUS_SENSE",
+    "is_analog_signal": true,
+    "is_global": true
+  },
+  {
+    "type": "source_net",
+    "source_net_id": "VDRV_12V",
+    "name": "VDRV_12V",
+    "is_power": true,
+    "is_global": true,
+    "trace_width": 0.5
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "3V3_TRACE",
+    "connected_source_port_ids": [
+      "U1-1",
+      "U1-21",
+      "U1-23",
+      "U1-35",
+      "U1-48",
+      "C1-1",
+      "C2-1",
+      "J3-1",
+      "U1-20",
+      "J4-1",
+      "PF_3V3-1"
+    ],
+    "connected_source_net_ids": [
+      "3V3"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "BOOT_A_TRACE",
+    "connected_source_port_ids": [
+      "U2-8",
+      "C5-1",
+      "D1-1"
+    ],
+    "connected_source_net_ids": [
+      "BOOT_A"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "BOOT_B_TRACE",
+    "connected_source_port_ids": [
+      "U3-8",
+      "C6-1",
+      "D2-1"
+    ],
+    "connected_source_net_ids": [
+      "BOOT_B"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "BOOT_C_TRACE",
+    "connected_source_port_ids": [
+      "U4-8",
+      "C7-1",
+      "D3-1"
+    ],
+    "connected_source_net_ids": [
+      "BOOT_C"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "GATE_HA_TRACE",
+    "connected_source_port_ids": [
+      "RG1-2",
+      "Q1-1"
+    ],
+    "connected_source_net_ids": [
+      "GATE_HA"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "GATE_HB_TRACE",
+    "connected_source_port_ids": [
+      "RG3-2",
+      "Q3-1"
+    ],
+    "connected_source_net_ids": [
+      "GATE_HB"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "GATE_HC_TRACE",
+    "connected_source_port_ids": [
+      "RG5-2",
+      "Q5-1"
+    ],
+    "connected_source_net_ids": [
+      "GATE_HC"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "GATE_LA_TRACE",
+    "connected_source_port_ids": [
+      "RG2-2",
+      "Q2-1"
+    ],
+    "connected_source_net_ids": [
+      "GATE_LA"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "GATE_LB_TRACE",
+    "connected_source_port_ids": [
+      "RG4-2",
+      "Q4-1"
+    ],
+    "connected_source_net_ids": [
+      "GATE_LB"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "GATE_LC_TRACE",
+    "connected_source_port_ids": [
+      "RG6-2",
+      "Q6-1"
+    ],
+    "connected_source_net_ids": [
+      "GATE_LC"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "GND_TRACE",
+    "connected_source_port_ids": [
+      "J1-2",
+      "C4-2",
+      "U1-49",
+      "U2-4",
+      "U3-4",
+      "U4-4",
+      "RS1-2",
+      "R3-2",
+      "C1-2",
+      "C2-2",
+      "J3-4",
+      "J4-3",
+      "PF_GND-1",
+      "C8-2",
+      "C9-2"
+    ],
+    "connected_source_net_ids": [
+      "GND"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "HIN_A_TRACE",
+    "connected_source_port_ids": [
+      "U1-30",
+      "U2-2"
+    ],
+    "connected_source_net_ids": [
+      "HIN_A"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "HIN_B_TRACE",
+    "connected_source_port_ids": [
+      "U1-31",
+      "U3-2"
+    ],
+    "connected_source_net_ids": [
+      "HIN_B"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "HIN_C_TRACE",
+    "connected_source_port_ids": [
+      "U1-32",
+      "U4-2"
+    ],
+    "connected_source_net_ids": [
+      "HIN_C"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "HO_A_TRACE",
+    "connected_source_port_ids": [
+      "U2-7",
+      "RG1-1"
+    ],
+    "connected_source_net_ids": [
+      "HO_A"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "HO_B_TRACE",
+    "connected_source_port_ids": [
+      "U3-7",
+      "RG3-1"
+    ],
+    "connected_source_net_ids": [
+      "HO_B"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "HO_C_TRACE",
+    "connected_source_port_ids": [
+      "U4-7",
+      "RG5-1"
+    ],
+    "connected_source_net_ids": [
+      "HO_C"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "HSE_IN_TRACE",
+    "connected_source_port_ids": [
+      "U1-5",
+      "Y1-1",
+      "C8-1"
+    ],
+    "connected_source_net_ids": [
+      "HSE_IN"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "HSE_OUT_TRACE",
+    "connected_source_port_ids": [
+      "U1-6",
+      "Y1-2",
+      "C9-1"
+    ],
+    "connected_source_net_ids": [
+      "HSE_OUT"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "LIN_A_TRACE",
+    "connected_source_port_ids": [
+      "U1-15",
+      "U2-3"
+    ],
+    "connected_source_net_ids": [
+      "LIN_A"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "LIN_B_TRACE",
+    "connected_source_port_ids": [
+      "U1-17",
+      "U3-3"
+    ],
+    "connected_source_net_ids": [
+      "LIN_B"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "LIN_C_TRACE",
+    "connected_source_port_ids": [
+      "U1-18",
+      "U4-3"
+    ],
+    "connected_source_net_ids": [
+      "LIN_C"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "LO_A_TRACE",
+    "connected_source_port_ids": [
+      "U2-5",
+      "RG2-1"
+    ],
+    "connected_source_net_ids": [
+      "LO_A"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "LO_B_TRACE",
+    "connected_source_port_ids": [
+      "U3-5",
+      "RG4-1"
+    ],
+    "connected_source_net_ids": [
+      "LO_B"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "LO_C_TRACE",
+    "connected_source_port_ids": [
+      "U4-5",
+      "RG6-1"
+    ],
+    "connected_source_net_ids": [
+      "LO_C"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "PHASE_A_TRACE",
+    "connected_source_port_ids": [
+      "Q1-3",
+      "Q2-2",
+      "U2-6",
+      "C5-2",
+      "J2-1"
+    ],
+    "connected_source_net_ids": [
+      "PHASE_A"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "PHASE_B_TRACE",
+    "connected_source_port_ids": [
+      "Q3-3",
+      "Q4-2",
+      "U3-6",
+      "C6-2",
+      "J2-2"
+    ],
+    "connected_source_net_ids": [
+      "PHASE_B"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "PHASE_C_TRACE",
+    "connected_source_port_ids": [
+      "Q5-3",
+      "Q6-2",
+      "U4-6",
+      "C7-2",
+      "J2-3"
+    ],
+    "connected_source_net_ids": [
+      "PHASE_C"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "SHUNT_TOP_TRACE",
+    "connected_source_port_ids": [
+      "Q2-3",
+      "Q4-3",
+      "Q6-3",
+      "RS1-1",
+      "U1-8"
+    ],
+    "connected_source_net_ids": [
+      "SHUNT_TOP"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "SWCLK_TRACE",
+    "connected_source_port_ids": [
+      "U1-37",
+      "J3-3"
+    ],
+    "connected_source_net_ids": [
+      "SWCLK"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "SWDIO_TRACE",
+    "connected_source_port_ids": [
+      "U1-36",
+      "J3-2"
+    ],
+    "connected_source_net_ids": [
+      "SWDIO"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "VBUS_SENSE_TRACE",
+    "connected_source_port_ids": [
+      "U1-9",
+      "R2-2",
+      "R3-1"
+    ],
+    "connected_source_net_ids": [
+      "VBUS_SENSE"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "VBUS_TRACE",
+    "connected_source_port_ids": [
+      "J1-1",
+      "C4-1",
+      "Q1-2",
+      "Q3-2",
+      "Q5-2",
+      "R2-1"
+    ],
+    "connected_source_net_ids": [
+      "VBUS"
+    ]
+  },
+  {
+    "type": "source_trace",
+    "source_trace_id": "VDRV_12V_TRACE",
+    "connected_source_port_ids": [
+      "U2-1",
+      "U3-1",
+      "U4-1",
+      "D1-2",
+      "D2-2",
+      "D3-2",
+      "J4-2",
+      "PF_VDRV-1"
+    ],
+    "connected_source_net_ids": [
+      "VDRV_12V"
+    ]
+  }
+]
